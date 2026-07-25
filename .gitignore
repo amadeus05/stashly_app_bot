@@ -1,0 +1,11 @@
+node_modules/
+.wrangler/
+dist/
+.env
+.env.*
+# Образец без значений — он как раз нужен в репозитории.
+!.env.example
+*.log
+.dev.vars
+.test-build/
+tests/captured.json

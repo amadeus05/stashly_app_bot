@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>Stashly</title>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#635BFF"/>
+      <stop offset="1" stop-color="#7C3AED"/>
+    </linearGradient>
+
+    <radialGradient id="glow" cx="0.25" cy="0.05" r="0.75">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+
+    <filter id="shadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="7" stdDeviation="14" flood-color="#140C3C" flood-opacity="0.42"/>
+    </filter>
+
+    <clipPath id="squircle">
+      <rect width="512" height="512" rx="120" ry="120"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#squircle)">
+    <rect width="512" height="512" fill="url(#bg)"/>
+    <rect width="512" height="512" fill="url(#glow)"/>
+  </g>
+
+  <!-- Стопка карточек: две задние дают глубину, передняя несёт смысл. -->
+  <g filter="url(#shadow)">
+    <rect x="128" y="118" width="225" height="276" rx="28" fill="#FFFFFF" opacity="0.41"
+          transform="rotate(-15 240 256)"/>
+    <rect x="143" y="118" width="225" height="276" rx="28" fill="#FFFFFF" opacity="0.67"
+          transform="rotate(-7.5 256 256)"/>
+    <rect x="153" y="118" width="225" height="276" rx="28" fill="#FFFFFF"/>
+  </g>
+
+  <!-- Монограмма. Шрифт задан именем: если нужен независимый от системы
+       файл, переведите текст в кривые в редакторе. -->
+  <text x="265" y="256" fill="#312E81"
+        font-family="Arial Black, Arial Bold, Helvetica, sans-serif"
+        font-size="200" font-weight="900"
+        text-anchor="middle" dominant-baseline="central">S</text>
+
+  <!-- Единственное цветовое пятно — оно и держит взгляд. -->
+  <circle cx="365" cy="132" r="27" fill="#FBBF24"/>
+</svg>

@@ -1,0 +1,24 @@
+name = "note-keeper"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+
+# Секреты (НЕ здесь, иначе уедут в git):
+#   wrangler secret put BOT_TOKEN
+#   wrangler secret put WEBHOOK_SECRET   # произвольная строка, сверяется с заголовком Telegram
+#   wrangler secret put ADMIN_SECRET     # защищает /admin/*
+[vars]
+LOG_LEVEL = "info"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "note_keeper"
+database_id = "62d97021-9bc8-40af-b327-58e34ada9f3b"
+migrations_dir = "migrations"
+
+# Разгребает очередь переиндексации и чистит протухшие мастера ввода,
+# если воркер упал между операциями.
+[triggers]
+crons = ["*/15 * * * *"]
+
+[observability]
+enabled = true
