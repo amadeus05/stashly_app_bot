@@ -9,7 +9,9 @@ import {
   cancelOnly,
   cardMenu,
   collectionPicker,
+  keyPicker,
   manageMenu,
+  tagPicker,
   collectionsMenu,
   entryList,
   hitList,
@@ -177,6 +179,65 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
     const card = detail.object.parentId ? await app.card(userId, detail.object.parentId) : null;
     const index = card ? card.attachments.findIndex((a) => a.object.id === targetId) + 1 : 1;
     await sendAttachment(ctx, detail, index);
+  }
+
+  /** Сколько подсказок помещается на экран, не превращая его в простыню. */
+  const SUGGEST_LIMIT = 12;
+
+  /** Экран выбора тегов: уже заведённые с отметками + «написать новый». */
+  async function showTagPicker(ctx: Context, userId: number, objectId: string, edit: boolean): Promise<void> {
+    const object = await app.entries.findById(userId, objectId);
+    if (!object) return;
+
+    const collectionId = await app.entries.collectionIdOf(objectId);
+    const [tags, selected] = await Promise.all([
+      app.entries.suggestTags(userId, collectionId, SUGGEST_LIMIT),
+      app.entries.tagIdsOf(objectId),
+    ]);
+
+    await app.state.set(userId, 'idle', { target: objectId });
+
+    // Первый тег заводить неоткуда — сразу просим ввести.
+    if (tags.length === 0) {
+      await app.state.set(userId, 'tag:name', { objectId });
+      await ctx.reply('Тегов пока нет. Введите первый — можно несколько через запятую.', ASK);
+      return;
+    }
+
+    await screen(
+      ctx,
+      '<b>Теги</b>\n\nНажмите, чтобы поставить или снять. Сверху — те, что вы уже использовали в этом разделе.',
+      tagPicker(tags, new Set(selected), objectId, object.type === 'attachment'),
+      edit,
+    );
+  }
+
+  /** Экран выбора названия поля из уже использованных. */
+  async function showKeyPicker(ctx: Context, userId: number, objectId: string, edit: boolean): Promise<void> {
+    const object = await app.entries.findById(userId, objectId);
+    if (!object) return;
+
+    const collectionId = await app.entries.collectionIdOf(objectId);
+    const keys = await app.entries.suggestKeys(userId, object.type, collectionId, SUGGEST_LIMIT);
+
+    if (keys.length === 0) {
+      await app.state.set(userId, 'property:key', { objectId });
+      await ctx.reply(
+        'Название поля?\n\nНапример: <code>Озвучка</code>, <code>Оценка</code>, <code>Начал</code>',
+        ASK,
+      );
+      return;
+    }
+
+    // Список кладём в состояние: в callback_data влезает только индекс.
+    await app.state.set(userId, 'idle', { target: objectId, keys: JSON.stringify(keys) });
+
+    await screen(
+      ctx,
+      '<b>Название поля</b>\n\nВыберите из тех, что уже используете, или задайте своё.',
+      keyPicker(keys, objectId, object.type === 'attachment'),
+      edit,
+    );
   }
 
   /**
@@ -537,18 +598,73 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
       }
 
       case CB.addProperty:
+        if (arg) await showKeyPicker(ctx, userId, arg, true);
+        return;
+
+      case CB.addTag:
+        if (arg) await showTagPicker(ctx, userId, arg, true);
+        return;
+
+      case CB.toggleTag: {
+        if (!arg) return;
+        const dialog = await app.state.get(userId);
+        const objectId = dialog.payload.target;
+        if (!objectId) {
+          await ctx.reply('Экран устарел — откройте запись заново.');
+          return;
+        }
+
+        // Один тап ставит, второй снимает: отдельного «удалить» не нужно.
+        const current = await app.entries.tagIdsOf(objectId);
+        if (current.includes(arg)) {
+          await app.removeTag(objectId, arg);
+        } else {
+          await app.attachTag(userId, objectId, arg);
+        }
+
+        await showTagPicker(ctx, userId, objectId, true);
+        return;
+      }
+
+      case CB.newTag:
+        if (!arg) return;
+        await app.state.set(userId, 'tag:name', { objectId: arg });
+        await ctx.reply('Тег? Можно несколько через запятую.', ASK);
+        return;
+
+      case CB.pickKey: {
+        const dialog = await app.state.get(userId);
+        const objectId = dialog.payload.target;
+        if (!objectId || !dialog.payload.keys) {
+          await ctx.reply('Экран устарел — откройте запись заново.');
+          return;
+        }
+
+        let keys: string[] = [];
+        try {
+          keys = JSON.parse(dialog.payload.keys) as string[];
+        } catch {
+          keys = [];
+        }
+
+        const key = keys[Number(arg ?? '-1')];
+        if (!key) {
+          await ctx.reply('Поле не найдено — попробуйте ещё раз.');
+          return;
+        }
+
+        await app.state.set(userId, 'property:value', { objectId, key });
+        await ctx.reply(`Значение для «${esc(key)}»?`, ASK);
+        return;
+      }
+
+      case CB.newKey:
         if (!arg) return;
         await app.state.set(userId, 'property:key', { objectId: arg });
         await ctx.reply(
           'Название поля?\n\nНапример: <code>Озвучка</code>, <code>Оценка</code>, <code>Начал</code>',
           ASK,
         );
-        return;
-
-      case CB.addTag:
-        if (!arg) return;
-        await app.state.set(userId, 'tag:name', { objectId: arg });
-        await ctx.reply('Тег? Можно несколько через запятую.', ASK);
         return;
 
       case CB.addNote:

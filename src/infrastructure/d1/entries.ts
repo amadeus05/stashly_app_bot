@@ -332,6 +332,111 @@ export class EntryRepository {
     return row?.n ?? 0;
   }
 
+  /**
+   * Теги для быстрого выбора.
+   *
+   * Сверху — те, что уже встречались в этом разделе: раскладка «донхуа»
+   * не должна тонуть в тегах рыбалки. LEFT JOIN, чтобы тег, снятый со
+   * всех записей, не исчезал из списка навсегда.
+   */
+  async suggestTags(
+    userId: number,
+    collectionId: string | null,
+    limit: number,
+  ): Promise<Array<Tag & { uses: number }>> {
+    const { results } = await this.db
+      .prepare(
+        `SELECT t.id, t.name,
+                COUNT(ot.object_id) AS uses,
+                COALESCE(SUM(CASE WHEN oc.collection_id = ?2 THEN 1 ELSE 0 END), 0) AS here
+         FROM tags t
+         LEFT JOIN object_tags ot ON ot.tag_id = t.id
+         LEFT JOIN object_collections oc ON oc.object_id = ot.object_id
+         WHERE t.user_id = ?1
+         GROUP BY t.id
+         ORDER BY here DESC, uses DESC, t.name
+         LIMIT ?3`,
+      )
+      .bind(userId, collectionId, limit)
+      .all<Tag & { uses: number }>();
+
+    return results;
+  }
+
+  /**
+   * Названия полей для быстрого выбора.
+   *
+   * Тип объекта важен: у вложений свои поля («Тайминг», «Серия»), и
+   * подсовывать там «Озвучку» от записи бессмысленно.
+   */
+  async suggestKeys(
+    userId: number,
+    type: ObjectType,
+    collectionId: string | null,
+    limit: number,
+  ): Promise<string[]> {
+    const { results } = await this.db
+      .prepare(
+        `SELECT p.key AS key, COUNT(*) AS uses,
+                COALESCE(SUM(CASE WHEN oc.collection_id = ?3 THEN 1 ELSE 0 END), 0) AS here
+         FROM properties p
+         JOIN objects o ON o.id = p.object_id
+         LEFT JOIN object_collections oc
+                ON oc.object_id = COALESCE(o.parent_id, o.id)
+         WHERE p.user_id = ?1 AND o.type = ?2
+         GROUP BY p.key_norm
+         ORDER BY here DESC, uses DESC, p.key
+         LIMIT ?4`,
+      )
+      .bind(userId, type, collectionId, limit)
+      .all<{ key: string }>();
+
+    return results.map((row) => row.key);
+  }
+
+  /**
+   * Вешает существующий тег. Проверка user_id обязательна: id тега
+   * приходит из callback_data, то есть с клиента.
+   */
+  async attachTag(userId: number, objectId: string, tagId: string): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO object_tags(object_id, tag_id)
+         SELECT ?1, ?2 WHERE EXISTS (SELECT 1 FROM tags WHERE id = ?2 AND user_id = ?3)
+         ON CONFLICT DO NOTHING`,
+      )
+      .bind(objectId, tagId, userId)
+      .run();
+
+    await this.touch(objectId);
+  }
+
+  /** Какие теги уже стоят — чтобы показать отметки в списке выбора. */
+  async tagIdsOf(objectId: string): Promise<string[]> {
+    const { results } = await this.db
+      .prepare(`SELECT tag_id FROM object_tags WHERE object_id = ?1`)
+      .bind(objectId)
+      .all<{ tag_id: string }>();
+
+    return results.map((row) => row.tag_id);
+  }
+
+  /** Раздел объекта: у вложения он берётся у родительской записи. */
+  async collectionIdOf(objectId: string): Promise<string | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT oc.collection_id AS id
+         FROM objects o
+         LEFT JOIN object_collections oc ON oc.object_id = COALESCE(o.parent_id, o.id)
+         WHERE o.id = ?1
+         LIMIT 1`,
+      )
+      .bind(objectId)
+      .first<{ id: string | null }>();
+
+    return row?.id ?? null;
+  }
+
   /** Свойство с тем же ключом перезаписывается — ключ уникален в пределах объекта. */
   async setProperty(userId: number, objectId: string, key: string, value: TypedValue): Promise<void> {
     await this.db

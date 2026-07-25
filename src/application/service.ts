@@ -83,6 +83,12 @@ export class NoteKeeper {
     return objectId;
   }
 
+  /** Повесить уже существующий тег — выбором из списка, а не вводом имени. */
+  async attachTag(userId: number, objectId: string, tagId: string): Promise<void> {
+    await this.entries.attachTag(userId, objectId, tagId);
+    await this.search.flushDirty();
+  }
+
   async removeTag(objectId: string, tagId: string): Promise<void> {
     await this.entries.removeTag(objectId, tagId);
     await this.search.flushDirty();

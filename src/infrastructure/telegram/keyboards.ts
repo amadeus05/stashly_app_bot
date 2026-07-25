@@ -27,10 +27,60 @@ export const CB = {
   attachment: 'at',
   deleteObject: 'do',
   manage: 'mg',
+  toggleTag: 'tg',
+  newTag: 'tn',
+  pickKey: 'pk',
+  newKey: 'kn',
   deleteProperty: 'dp',
   deleteTag: 'dt',
   deleteNote: 'dn',
 } as const;
+
+/**
+ * Выбор тегов из уже заведённых.
+ *
+ * Отметка показывает текущее состояние, повторный тап снимает — так
+ * один экран закрывает и «повесить», и «снять», не заставляя искать
+ * отдельный пункт меню.
+ */
+export function tagPicker(
+  tags: Array<{ id: string; name: string }>,
+  selected: Set<string>,
+  backTo: string,
+  isAttachment: boolean,
+): InlineKeyboard {
+  const keyboard = new InlineKeyboard();
+
+  // По два в ряд: теги короткие, в один столбец экран растянется зря.
+  tags.forEach((tag, index) => {
+    const mark = selected.has(tag.id) ? '✅' : '▫️';
+    keyboard.text(`${mark} ${tag.name}`.slice(0, 30), `${CB.toggleTag}:${tag.id}`);
+    if (index % 2 === 1) keyboard.row();
+  });
+  if (tags.length % 2 === 1) keyboard.row();
+
+  const back = isAttachment ? `${CB.attachment}:${backTo}` : `${CB.entry}:${backTo}`;
+  return keyboard.text('✏️ Написать новый', `${CB.newTag}:${backTo}`).row().text('✅ Готово', back);
+}
+
+/**
+ * Выбор названия поля из уже использованных.
+ *
+ * В callback_data кладём индекс, а не сам ключ: произвольный текст туда
+ * не влезет и требует экранирования. Список лежит в user_state.
+ */
+export function keyPicker(keys: string[], backTo: string, isAttachment: boolean): InlineKeyboard {
+  const keyboard = new InlineKeyboard();
+
+  keys.forEach((key, index) => {
+    keyboard.text(key.slice(0, 30), `${CB.pickKey}:${index}`);
+    if (index % 2 === 1) keyboard.row();
+  });
+  if (keys.length % 2 === 1) keyboard.row();
+
+  const back = isAttachment ? `${CB.attachment}:${backTo}` : `${CB.entry}:${backTo}`;
+  return keyboard.text('✏️ Своё название', `${CB.newKey}:${backTo}`).row().text('⬅️ Назад', back);
+}
 
 /**
  * Экран «убрать лишнее».

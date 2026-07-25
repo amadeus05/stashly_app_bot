@@ -80,6 +80,14 @@ for (const q of queries) {
   searchSql.push({ query: q, ...capturedSearch[0] });
 }
 
+// Подсказки тегов и полей: группировка с LEFT JOIN, проверяем на живом SQLite.
+await app.entries.suggestTags(USER, collection.id, 12);
+await app.entries.suggestKeys(USER, 'entry', collection.id, 12);
+await app.entries.suggestKeys(USER, 'attachment', collection.id, 12);
+await app.entries.tagIdsOf(entryId);
+await app.entries.collectionIdOf(attachmentId);
+await app.entries.attachTag(USER, entryId, 't1');
+
 // Запросы со страницами и сохранение присланного — только на синтаксис:
 // шим не возвращает строк, содержательные проверки ниже, на чистых функциях.
 await app.recent(USER, 3);
