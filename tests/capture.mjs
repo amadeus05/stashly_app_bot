@@ -72,6 +72,10 @@ const queries = [
   'Ту Сы',
   'раздел:донхуа has:фото',
   'небеса AND OR "*" ((',
+  'прот',
+  'anis',
+  'Ван Ли',
+  'я',
 ];
 const searchSql = [];
 for (const q of queries) {
@@ -115,7 +119,9 @@ check('фильтры отделены от текста',
 check('12:34 — текст, а не фильтр', parseQuery('12:34').text, '12:34');
 check('оценка>=абв — текст', parseQuery('оценка>=абв').text, 'оценка>=абв');
 check('неизвестный has игнорируется', parseQuery('has:чепуха').has, []);
-check('синтаксис FTS обезврежен', toMatchExpression('AND OR "*" (( небеса'), '"AND" AND "OR" AND "небеса"');
+check('синтаксис FTS обезврежен', toMatchExpression('AND OR "*" (( небеса'), '"AND"* AND "OR"* AND "небеса"*');
+check('поиск по началу слова', toMatchExpression('дон'), '"дон"*');
+check('один символ — без звёздочки', toMatchExpression('я'), '"я"');
 check('пустой запрос', toMatchExpression('   '), null);
 
 console.log('\nтипы значений:');

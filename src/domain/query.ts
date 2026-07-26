@@ -118,13 +118,17 @@ export function parseQuery(input: string): ParsedQuery {
  * Пользовательский ввод нельзя отдавать в MATCH напрямую: кавычки, звёздочки
  * и слова AND/OR/NOT — это синтаксис FTS, и на нём запрос падает с ошибкой.
  * Каждый терм экранируем и берём в кавычки, соединяя через AND.
+ *
+ * К термам от двух символов добавляем `*` — поиск по началу слова.
+ * Человек пишет «дон», ожидая найти «Донхуа», и это ожидание правильное.
+ * Односимвольные термы оставляем точными: «а*» совпало бы почти со всем.
  */
 export function toMatchExpression(text: string): string | null {
   const terms = text
     .split(/\s+/)
     .map((term) => term.replace(/["*^:()\-]/g, ' ').trim())
     .filter((term) => term.length > 0)
-    .map((term) => `"${term}"`);
+    .map((term) => (term.length >= 2 ? `"${term}"*` : `"${term}"`));
 
   return terms.length > 0 ? terms.join(' AND ') : null;
 }
