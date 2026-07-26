@@ -36,7 +36,7 @@ export function renderAttachment(
 ): string {
   const icon = MEDIA_ICON[detail.attachment.mediaType];
   const label = detail.object.title ?? `${MEDIA_LABEL[detail.attachment.mediaType]} ${index}`;
-  const lines = [`${icon} <b>${esc(label)}</b>`];
+  const lines = [header(`${icon} ${label}`)];
 
   if (detail.properties.length > 0) {
     lines.push('');
@@ -63,7 +63,7 @@ export function renderCard(card: EntryCard): string {
   const lines: string[] = [];
 
   const collections = card.collections.map((c) => `${c.icon ?? '📁'} ${esc(c.name)}`).join(', ');
-  lines.push(`<b>${esc(card.entry.title ?? 'Без названия')}</b>`);
+  lines.push(header(card.entry.title ?? 'Без названия'));
   if (collections) lines.push(`<i>${collections}</i>`);
 
   if (card.entry.body) {
@@ -112,29 +112,38 @@ function pageLabel(page: Page<unknown>): string {
   return `\n\n<i>стр. ${page.page + 1}</i>`;
 }
 
+/** Заголовок экрана. Цитата отделяет его от кнопок, не занимая места. */
+export function header(text: string): string {
+  return `<blockquote>${esc(text)}</blockquote>`;
+}
+
 export function renderHits(page: Page<SearchHit>, query: string): string {
   if (page.items.length === 0) {
     return (
-      `Ничего не нашлось по запросу <code>${esc(query)}</code>.\n\n` +
+      `${header(`Ничего не нашлось: ${query}`)}\n\n` +
       `Фильтры: <code>tag:любимое</code> <code>оценка&gt;=9</code> <code>has:фото</code> <code>раздел:донхуа</code>`
     );
   }
 
-  const lines = [`Найдено по запросу <code>${esc(query)}</code>:`, ''];
-  for (const hit of page.items) {
-    const icon = HIT_ICON[hit.matchedType] ?? '📄';
-    // Показываем, ГДЕ совпало: попадание в скрин не должно выглядеть
-    // так же, как попадание в название записи.
-    const where = hit.matchedType === 'entry' ? '' : ` <i>(${hit.snippet ? esc(hit.snippet) : 'вложение'})</i>`;
-    lines.push(`${icon} ${esc(hit.entryTitle)}${where}`);
+  // Названия не перечисляем — они уже на кнопках. Оставляем только то,
+  // чего в кнопках нет: где именно совпало.
+  const elsewhere = page.items.filter((hit) => hit.matchedType !== 'entry');
+  const lines = [header(`Найдено: ${query}`)];
+
+  if (elsewhere.length > 0) {
+    lines.push('');
+    for (const hit of elsewhere) {
+      const icon = HIT_ICON[hit.matchedType] ?? '📄';
+      const where = hit.snippet ? esc(hit.snippet) : 'вложение';
+      lines.push(`${icon} <i>${esc(hit.entryTitle)} — ${where}</i>`);
+    }
   }
+
   return lines.join('\n') + pageLabel(page);
 }
 
 export function renderList(page: Page<StoredObject>, title: string): string {
-  if (page.items.length === 0) return `<b>${esc(title)}</b>\n\nПусто.`;
-  return (
-    [`<b>${esc(title)}</b>`, '', ...page.items.map((e) => `📄 ${esc(e.title ?? 'Без названия')}`)].join('\n') +
-    pageLabel(page)
-  );
+  // Перечислять записи текстом незачем: они прямо под этим на кнопках.
+  if (page.items.length === 0) return `${header(title)}\n\nПусто.`;
+  return header(title) + pageLabel(page);
 }

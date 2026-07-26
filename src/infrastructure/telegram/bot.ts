@@ -19,7 +19,7 @@ import {
   saveOffer,
 } from './keyboards.js';
 import { extractMedia, titleForMedia } from './media.js';
-import { esc, renderAttachment, renderCard, renderHits, renderList } from './render.js';
+import { esc, header, renderAttachment, renderCard, renderHits, renderList } from './render.js';
 import { formatValue } from '../../domain/property.js';
 
 const HTML = { parse_mode: 'HTML' } as const;
@@ -75,8 +75,8 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
     ]);
 
     const text =
-      `<b>Stashly</b>\n\n` +
-      `Записей: <b>${entryCount}</b> · Разделов: <b>${collections.length}</b>\n\n` +
+      header('Stashly') +
+      `\nЗаписей: <b>${entryCount}</b> · Разделов: <b>${collections.length}</b>\n\n` +
       `Пришлите текст или медиа — предложу сохранить. Или просто напишите, что ищете.`;
     const keyboard = mainMenu(entryCount, collections.length);
 
@@ -206,7 +206,7 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
 
     await screen(
       ctx,
-      '<b>Теги</b>\n\nНажмите, чтобы поставить или снять. Сверху — те, что вы уже использовали в этом разделе.',
+      header('Теги') + '\nНажмите, чтобы поставить или снять. Сверху — те, что уже использовали в этом разделе.',
       tagPicker(tags, new Set(selected), objectId, object.type === 'attachment'),
       edit,
     );
@@ -234,7 +234,7 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
 
     await screen(
       ctx,
-      '<b>Название поля</b>\n\nВыберите из тех, что уже используете, или задайте своё.',
+      header('Название поля') + '\nВыберите из тех, что уже используете, или задайте своё.',
       keyPicker(keys, objectId, object.type === 'attachment'),
       edit,
     );
@@ -257,8 +257,8 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
     const total = items.properties.length + items.tags.length + items.notes.length;
     const text =
       total === 0
-        ? '<b>Убрать лишнее</b>\n\nНечего убирать.'
-        : '<b>Убрать лишнее</b>\n\nНажмите, чтобы удалить. Действие сразу и без подтверждения.';
+        ? header('Убрать лишнее') + '\nНечего убирать.'
+        : header('Убрать лишнее') + '\nНажмите, чтобы удалить. Сразу и без подтверждения.';
 
     const keyboard = manageMenu({
       properties: items.properties.map((p) => ({ id: p.id, key: p.key, value: formatValue(p) })),
@@ -406,7 +406,7 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
 
       case CB.collections: {
         const collections = await app.collections.list(userId);
-        await screen(ctx, '<b>Разделы</b>', collectionsMenu(collections), true);
+        await screen(ctx, header('Разделы'), collectionsMenu(collections), true);
         return;
       }
 
@@ -508,7 +508,7 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
 
         await app.deleteCollection(userId, arg);
         const collections = await app.collections.list(userId);
-        await screen(ctx, `Раздел удалён.\n\n<b>Разделы</b>`, collectionsMenu(collections), true);
+        await screen(ctx, header('Разделы') + '\nРаздел удалён.', collectionsMenu(collections), true);
         return;
       }
 
@@ -521,14 +521,7 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
         const card = await app.card(userId, arg);
         if (!card) return;
 
-        await screen(
-          ctx,
-          `<b>Вложения</b> — ${card.attachments.length} шт.
-
-Откройте, чтобы посмотреть и добавить поля.`,
-          attachmentList(card),
-          true,
-        );
+        await screen(ctx, header(`Вложения — ${card.attachments.length}`), attachmentList(card), true);
         return;
       }
 
