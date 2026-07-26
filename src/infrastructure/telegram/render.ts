@@ -186,16 +186,14 @@ function joinWithin(lines: string[], limit: number): string {
 
 function renderNote(note: StoredObject): string {
   const body = clamp((note.body ?? '').trim(), NOTE_MAX);
-  const date = shortDate(note.createdAt);
 
   // Многострочное или длинное — под кат: Telegram сам покажет первые
-  // строки и кнопку «Показать полностью». Дату здесь не пишем: над
-  // свёрнутой цитатой она висит оторванной строкой и только мешает.
+  // строки и кнопку «Показать полностью».
   if (body.length > NOTE_INLINE || body.includes('\n')) {
     return `<blockquote expandable>${esc(body)}</blockquote>`;
   }
 
-  return `💬 ${esc(body)}  <i>${date}</i>`;
+  return `💬 ${esc(body)}`;
 }
 
 export function renderHits(page: Page<SearchHit>, query: string): string {
