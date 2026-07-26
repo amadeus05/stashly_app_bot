@@ -142,6 +142,31 @@ check('пустое отклонено', bad('   '), true);
 check('слишком длинное отклонено', bad('я'.repeat(65)), true);
 check('64 символа проходят', NoteKeeper.validateName('я'.repeat(64)), null);
 
+// Индекс поля передаётся в callback_data. Если он считается от начала
+// страницы, а не всего списка, на второй странице выберется чужое поле.
+console.log('\nпагинация списков выбора:');
+const { keyPicker, tagPicker, PICKER_PAGE } = await import('../.test-build/infrastructure/telegram/keyboards.js');
+const many = Array.from({ length: 20 }, (_, i) => `Поле${i}`);
+
+const rows0 = keyPicker(many, 'obj', false, 0).inline_keyboard.flat();
+const rows1 = keyPicker(many, 'obj', false, 1).inline_keyboard.flat();
+const idx = (rows) => rows.filter((b) => b.callback_data?.startsWith('pk:')).map((b) => Number(b.callback_data.split(':')[1]));
+
+check('на странице ровно PICKER_PAGE полей', idx(rows0).length, PICKER_PAGE);
+check('индексы первой страницы', idx(rows0), [0, 1, 2, 3, 4, 5, 6, 7]);
+check('индексы второй страницы сквозные', idx(rows1), [8, 9, 10, 11, 12, 13, 14, 15]);
+check('счётчик показывает 2/3', rows1.some((b) => b.text === '2/3'), true);
+check('стрелки закольцованы', keyPicker(many, 'obj', false, 2).inline_keyboard.flat().some((b) => b.callback_data === 'kp:0'), true);
+check('одна страница — без листалки',
+  keyPicker(['A'], 'obj', false, 0).inline_keyboard.flat().some((b) => b.text === '1/1'), false);
+check('страница за пределами зажимается',
+  idx(keyPicker(many, 'obj', false, 99).inline_keyboard.flat()), [16, 17, 18, 19]);
+
+const tags = Array.from({ length: 10 }, (_, i) => ({ id: `t${i}`, name: `тег${i}` }));
+const tagRows = tagPicker(tags, new Set(['t9']), 'obj', false, 1).inline_keyboard.flat();
+check('отметка сохраняется на второй странице',
+  tagRows.some((b) => b.text.startsWith('✅') && b.text.includes('тег9')), true);
+
 console.log('\nпагинация:');
 const shim = { prepare: () => stmt('SELECT 1'), batch: async () => [] };
 const svc = new NoteKeeper(shim);

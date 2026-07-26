@@ -31,6 +31,10 @@ export const CB = {
   newTag: 'tn',
   pickKey: 'pk',
   newKey: 'kn',
+  tagPage: 'tp',
+  keyPage: 'kp',
+  collectionsPage: 'cp',
+  noop: 'x',
   deleteProperty: 'dp',
   deleteTag: 'dt',
   deleteNote: 'dn',
@@ -48,16 +52,20 @@ export function tagPicker(
   selected: Set<string>,
   backTo: string,
   isAttachment: boolean,
+  page = 0,
 ): InlineKeyboard {
   const keyboard = new InlineKeyboard();
+  const chunk = slice(tags, page);
 
   // По два в ряд: теги короткие, в один столбец экран растянется зря.
-  tags.forEach((tag, index) => {
+  chunk.items.forEach((tag, index) => {
     const mark = selected.has(tag.id) ? '✅' : '▫️';
     keyboard.text(`${mark} ${tag.name}`.slice(0, 30), `${CB.toggleTag}:${tag.id}`);
     if (index % 2 === 1) keyboard.row();
   });
-  if (tags.length % 2 === 1) keyboard.row();
+  if (chunk.items.length % 2 === 1) keyboard.row();
+
+  counterPager(keyboard, `${CB.tagPage}:`, chunk.page, chunk.pages);
 
   const back = isAttachment ? `${CB.attachment}:${backTo}` : `${CB.entry}:${backTo}`;
   return keyboard.text('✏️ Написать новый', `${CB.newTag}:${backTo}`).row().text('✅ Готово', back);
@@ -69,14 +77,24 @@ export function tagPicker(
  * В callback_data кладём индекс, а не сам ключ: произвольный текст туда
  * не влезет и требует экранирования. Список лежит в user_state.
  */
-export function keyPicker(keys: string[], backTo: string, isAttachment: boolean): InlineKeyboard {
+export function keyPicker(
+  keys: string[],
+  backTo: string,
+  isAttachment: boolean,
+  page = 0,
+): InlineKeyboard {
   const keyboard = new InlineKeyboard();
+  const chunk = slice(keys, page);
 
-  keys.forEach((key, index) => {
-    keyboard.text(key.slice(0, 30), `${CB.pickKey}:${index}`);
+  // Индекс в callback_data — сквозной по всему списку, а не по странице:
+  // иначе на второй странице выбралось бы поле с первой.
+  chunk.items.forEach((key, index) => {
+    keyboard.text(key.slice(0, 30), `${CB.pickKey}:${chunk.page * PICKER_PAGE + index}`);
     if (index % 2 === 1) keyboard.row();
   });
-  if (keys.length % 2 === 1) keyboard.row();
+  if (chunk.items.length % 2 === 1) keyboard.row();
+
+  counterPager(keyboard, `${CB.keyPage}:`, chunk.page, chunk.pages);
 
   const back = isAttachment ? `${CB.attachment}:${backTo}` : `${CB.entry}:${backTo}`;
   return keyboard.text('✏️ Своё название', `${CB.newKey}:${backTo}`).row().text('⬅️ Назад', back);
@@ -139,6 +157,38 @@ function pager(keyboard: InlineKeyboard, prefix: string, page: Page<unknown>): I
   return keyboard;
 }
 
+/** Сколько пунктов на странице списков выбора. */
+export const PICKER_PAGE = 8;
+
+/**
+ * Листалка со счётчиком: « 2/3 ».
+ *
+ * Стрелки закольцованы: с последней страницы «дальше» ведёт на первую.
+ * Так кнопки не «умирают» на краях и не приходится объяснять, почему
+ * одна из них вдруг перестала работать.
+ */
+function counterPager(keyboard: InlineKeyboard, prefix: string, page: number, pages: number): InlineKeyboard {
+  if (pages <= 1) return keyboard;
+
+  const prev = (page - 1 + pages) % pages;
+  const next = (page + 1) % pages;
+
+  keyboard
+    .text('«', `${prefix}${prev}`)
+    .text(`${page + 1}/${pages}`, CB.noop)
+    .text('»', `${prefix}${next}`)
+    .row();
+
+  return keyboard;
+}
+
+/** Отрезает страницу и сообщает, сколько их всего. */
+function slice<T>(items: T[], page: number): { items: T[]; page: number; pages: number } {
+  const pages = Math.max(1, Math.ceil(items.length / PICKER_PAGE));
+  const safe = Math.min(Math.max(page, 0), pages - 1);
+  return { items: items.slice(safe * PICKER_PAGE, (safe + 1) * PICKER_PAGE), page: safe, pages };
+}
+
 export function mainMenu(entryCount: number, collectionCount: number): InlineKeyboard {
   return new InlineKeyboard()
     .text('➕ Новая запись', CB.newEntry)
@@ -149,11 +199,23 @@ export function mainMenu(entryCount: number, collectionCount: number): InlineKey
     .text('🔍 Поиск', CB.search);
 }
 
-export function collectionsMenu(collections: Array<Collection & { entryCount: number }>): InlineKeyboard {
+export function collectionsMenu(
+  collections: Array<Collection & { entryCount: number }>,
+  page = 0,
+): InlineKeyboard {
   const keyboard = new InlineKeyboard();
-  for (const collection of collections) {
-    keyboard.text(`${collection.icon ?? '📁'} ${collection.name} · ${collection.entryCount}`, `${CB.collection}:${collection.id}:0`).row();
+  const chunk = slice(collections, page);
+
+  for (const collection of chunk.items) {
+    keyboard
+      .text(
+        `${collection.icon ?? '📁'} ${collection.name} · ${collection.entryCount}`,
+        `${CB.collection}:${collection.id}:0`,
+      )
+      .row();
   }
+
+  counterPager(keyboard, `${CB.collectionsPage}:`, chunk.page, chunk.pages);
   return keyboard.text('➕ Новый раздел', CB.newCollection).row().text('⬅️ Меню', CB.menu);
 }
 

@@ -181,11 +181,21 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
     await sendAttachment(ctx, detail, index);
   }
 
-  /** Сколько подсказок помещается на экран, не превращая его в простыню. */
-  const SUGGEST_LIMIT = 12;
+  /**
+   * Сколько подсказок вытягиваем. На экран идёт восемь, остальное
+   * листается — запрашивать по странице не стоит, счётчик «2/3» всё
+   * равно требует знать общее количество.
+   */
+  const SUGGEST_LIMIT = 200;
 
   /** Экран выбора тегов: уже заведённые с отметками + «написать новый». */
-  async function showTagPicker(ctx: Context, userId: number, objectId: string, edit: boolean): Promise<void> {
+  async function showTagPicker(
+    ctx: Context,
+    userId: number,
+    objectId: string,
+    edit: boolean,
+    page = 0,
+  ): Promise<void> {
     const object = await app.entries.findById(userId, objectId);
     if (!object) return;
 
@@ -195,7 +205,7 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
       app.entries.tagIdsOf(objectId),
     ]);
 
-    await app.state.set(userId, 'idle', { target: objectId });
+    await app.state.set(userId, 'idle', { target: objectId, page: String(page) });
 
     // Первый тег заводить неоткуда — сразу просим ввести.
     if (tags.length === 0) {
@@ -207,13 +217,19 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
     await screen(
       ctx,
       header('Теги') + '\nНажмите, чтобы поставить или снять. Сверху — те, что уже использовали в этом разделе.',
-      tagPicker(tags, new Set(selected), objectId, object.type === 'attachment'),
+      tagPicker(tags, new Set(selected), objectId, object.type === 'attachment', page),
       edit,
     );
   }
 
   /** Экран выбора названия поля из уже использованных. */
-  async function showKeyPicker(ctx: Context, userId: number, objectId: string, edit: boolean): Promise<void> {
+  async function showKeyPicker(
+    ctx: Context,
+    userId: number,
+    objectId: string,
+    edit: boolean,
+    page = 0,
+  ): Promise<void> {
     const object = await app.entries.findById(userId, objectId);
     if (!object) return;
 
@@ -235,7 +251,7 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
     await screen(
       ctx,
       header('Название поля') + '\nВыберите из тех, что уже используете, или задайте своё.',
-      keyPicker(keys, objectId, object.type === 'attachment'),
+      keyPicker(keys, objectId, object.type === 'attachment', page),
       edit,
     );
   }
@@ -598,6 +614,36 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
         if (arg) await showTagPicker(ctx, userId, arg, true);
         return;
 
+      // Средняя кнопка счётчика «2/3» — не кнопка, а подпись.
+      case CB.noop:
+        return;
+
+      case CB.collectionsPage: {
+        const collections = await app.collections.list(userId);
+        await screen(ctx, header('Разделы'), collectionsMenu(collections, Number(arg ?? '0')), true);
+        return;
+      }
+
+      case CB.tagPage: {
+        const dialog = await app.state.get(userId);
+        if (!dialog.payload.target) {
+          await ctx.reply('Экран устарел — откройте запись заново.');
+          return;
+        }
+        await showTagPicker(ctx, userId, dialog.payload.target, true, Number(arg ?? '0'));
+        return;
+      }
+
+      case CB.keyPage: {
+        const dialog = await app.state.get(userId);
+        if (!dialog.payload.target) {
+          await ctx.reply('Экран устарел — откройте запись заново.');
+          return;
+        }
+        await showKeyPicker(ctx, userId, dialog.payload.target, true, Number(arg ?? '0'));
+        return;
+      }
+
       case CB.toggleTag: {
         if (!arg) return;
         const dialog = await app.state.get(userId);
@@ -615,7 +661,9 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
           await app.attachTag(userId, objectId, arg);
         }
 
-        await showTagPicker(ctx, userId, objectId, true);
+        // Возвращаем на ту же страницу: отметить тег и улететь на первую —
+        // худший способ потерять пользователя посреди выбора.
+        await showTagPicker(ctx, userId, objectId, true, Number(dialog.payload.page ?? '0'));
         return;
       }
 
