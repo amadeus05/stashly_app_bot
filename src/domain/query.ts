@@ -58,7 +58,12 @@ export function parseQuery(input: string): ParsedQuery {
   const result: ParsedQuery = { text: '', tags: [], collections: [], properties: [], has: [] };
   const freeText: string[] = [];
 
-  for (const token of input.trim().split(/\s+/).filter(Boolean)) {
+  // Пробелы вокруг знака убираем до разбора: «оценка >= 9» человек пишет
+  // так же охотно, как «оценка>=9», а разбор идёт по пробелам и без этого
+  // распался бы на три отдельных слова для текстового поиска.
+  const normalized = input.trim().replace(/\s*(>=|<=|>|<|=|:)\s*/g, '$1');
+
+  for (const token of normalized.split(/\s+/).filter(Boolean)) {
     const match = TOKEN.exec(token);
     if (!match) {
       freeText.push(token);

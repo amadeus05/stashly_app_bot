@@ -117,6 +117,10 @@ check('фильтры отделены от текста',
   { text: 'небеса хотят', tags: ['любимое'], collections: ['донхуа'],
     properties: [{ key: 'оценка', op: '>=', num: 9 }], has: ['image'] });
 check('12:34 — текст, а не фильтр', parseQuery('12:34').text, '12:34');
+check('пробелы вокруг знака не мешают',
+  parseQuery('оценка >= 9').properties, [{ key: 'оценка', op: '>=', num: 9 }]);
+check('пробел после двоеточия не мешает', parseQuery('tag: любимое').tags, ['любимое']);
+check('свободный текст с пробелами цел', parseQuery('лучшая битва').text, 'лучшая битва');
 check('оценка>=абв — текст', parseQuery('оценка>=абв').text, 'оценка>=абв');
 check('неизвестный has игнорируется', parseQuery('has:чепуха').has, []);
 check('синтаксис FTS обезврежен', toMatchExpression('AND OR "*" (( небеса'), '"AND"* AND "OR"* AND "небеса"*');
