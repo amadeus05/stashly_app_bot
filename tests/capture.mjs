@@ -177,6 +177,37 @@ const tagRows = tagPicker(tags, new Set(['t9']), 'obj', false, 1).inline_keyboar
 check('отметка сохраняется на второй странице',
   tagRows.some((b) => b.text.startsWith('✅') && b.text.includes('тег9')), true);
 
+// Превышение лимита Telegram — это не обрезка, а отказ отправить:
+// карточка с длинными заметками просто перестала бы открываться.
+console.log('\nлимиты длины сообщения:');
+const { renderCard, renderAttachment } = await import('../.test-build/infrastructure/telegram/render.js');
+
+const song = Array.from({ length: 60 }, (_, i) => `Am    C    F E\nСтрока песни номер ${i}`).join('\n');
+const note = (body, id) => ({ id, type: 'note', body, createdAt: '2026-07-26T10:00:00.000Z', parentId: 'e', userId: 1, title: null, updatedAt: '' });
+
+const bigCard = renderCard({
+  entry: { id: 'e', type: 'entry', title: 'Звери - Говори', body: null, createdAt: '2026-07-26T10:00:00.000Z', updatedAt: '', parentId: null, userId: 1 },
+  collections: [{ id: 'c', userId: 1, name: 'Песни под гитару', icon: '📔' }],
+  properties: [], tags: [],
+  notes: [note(song, 'n1'), note(song, 'n2'), note(song, 'n3')],
+  attachments: [],
+});
+
+check('карточка влезает в лимит сообщения', bigCard.length <= 4096, true);
+check('длинная заметка — под катом', bigCard.includes('<blockquote expandable>'), true);
+check('обрезка не рвёт тег', (bigCard.match(/</g) || []).length === (bigCard.match(/>/g) || []).length, true);
+check('короткая заметка остаётся строкой',
+  renderCard({
+    entry: { id: 'e', type: 'entry', title: 'т', body: null, createdAt: '2026-07-26T10:00:00.000Z', updatedAt: '', parentId: null, userId: 1 },
+    collections: [], properties: [], tags: [], notes: [note('коротко', 'n')], attachments: [],
+  }).includes('<blockquote expandable>'), false);
+
+const caption = renderAttachment({
+  object: { id: 'a', type: 'attachment', title: 'Скрин', body: null, createdAt: '2026-07-26T10:00:00.000Z', updatedAt: '', parentId: 'e', userId: 1 },
+  attachment: { mediaType: 'photo' }, properties: [], notes: [note(song, 'n1')],
+}, 1);
+check('подпись к медиа влезает в 1024', caption.length <= 1024, true);
+
 console.log('\nпагинация:');
 const shim = { prepare: () => stmt('SELECT 1'), batch: async () => [] };
 const svc = new NoteKeeper(shim);

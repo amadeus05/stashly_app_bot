@@ -48,7 +48,7 @@ export function renderAttachment(
   if (detail.notes.length > 0) {
     lines.push('');
     for (const note of detail.notes) {
-      lines.push(`💬 ${esc(note.body ?? '')}  <i>${shortDate(note.createdAt)}</i>`);
+      lines.push(renderNote(note));
     }
   }
 
@@ -56,7 +56,8 @@ export function renderAttachment(
     lines.push('', '<i>Нет полей. Добавьте, например, «Тайминг» или «Серия».</i>');
   }
 
-  return lines.join('\n');
+  // Это подпись к медиа, а у неё лимит вчетверо строже, чем у сообщения.
+  return joinWithin(lines, CAPTION_LIMIT);
 }
 
 export function renderCard(card: EntryCard): string {
@@ -94,7 +95,7 @@ export function renderCard(card: EntryCard): string {
   if (card.notes.length > 0) {
     lines.push('', `<b>Заметки</b>`);
     for (const note of card.notes.slice(0, 5)) {
-      lines.push(`💬 ${esc(note.body ?? '')}  <i>${shortDate(note.createdAt)}</i>`);
+      lines.push(renderNote(note));
     }
     if (card.notes.length > 5) lines.push(`<i>…ещё ${card.notes.length - 5}</i>`);
   }
@@ -111,7 +112,7 @@ export function renderCard(card: EntryCard): string {
     if (card.attachments.length > 5) lines.push(`<i>…ещё ${card.attachments.length - 5}</i>`);
   }
 
-  return lines.join('\n');
+  return joinWithin(lines, CARD_LIMIT);
 }
 
 const HIT_ICON: Record<string, string> = { entry: '📄', attachment: '📎', note: '💬' };
@@ -141,6 +142,59 @@ function shortDate(iso: string): string {
 /** Заголовок экрана. Цитата отделяет его от кнопок, не занимая места. */
 export function header(text: string): string {
   return `<blockquote>${esc(text)}</blockquote>`;
+}
+
+/**
+ * Лимиты Telegram, а не наши предпочтения: 4096 символов на сообщение и
+ * 1024 на подпись к медиа. Превышение — не обрезка, а отказ отправить,
+ * то есть карточка с парой длинных заметок просто перестала бы открываться.
+ * Берём с запасом: HTML-экранирование удлиняет текст.
+ */
+const CARD_LIMIT = 3800;
+const CAPTION_LIMIT = 950;
+
+/** Короткую заметку показываем строкой, длинную — сворачиваемой цитатой. */
+const NOTE_INLINE = 180;
+const NOTE_MAX = 1500;
+
+function clamp(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
+}
+
+/**
+ * Собирает строки, пока не упрётся в лимит.
+ *
+ * Резать готовый HTML нельзя — обрыв внутри тега ломает разбор и
+ * Telegram отвергает сообщение целиком. Поэтому отбрасываем блоки,
+ * каждый из которых сам по себе валиден.
+ */
+function joinWithin(lines: string[], limit: number): string {
+  const out: string[] = [];
+  let size = 0;
+
+  for (const line of lines) {
+    if (size + line.length + 1 > limit) {
+      out.push('<i>…показано не всё, откройте отдельные заметки</i>');
+      break;
+    }
+    out.push(line);
+    size += line.length + 1;
+  }
+
+  return out.join('\n');
+}
+
+function renderNote(note: StoredObject): string {
+  const body = clamp((note.body ?? '').trim(), NOTE_MAX);
+  const date = shortDate(note.createdAt);
+
+  // Многострочное или длинное — под кат: Telegram сам покажет первые
+  // строки и кнопку «Показать полностью».
+  if (body.length > NOTE_INLINE || body.includes('\n')) {
+    return `💬 <i>${date}</i>\n<blockquote expandable>${esc(body)}</blockquote>`;
+  }
+
+  return `💬 ${esc(body)}  <i>${date}</i>`;
 }
 
 export function renderHits(page: Page<SearchHit>, query: string): string {
