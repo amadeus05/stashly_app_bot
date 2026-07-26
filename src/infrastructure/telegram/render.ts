@@ -189,9 +189,10 @@ function renderNote(note: StoredObject): string {
   const date = shortDate(note.createdAt);
 
   // Многострочное или длинное — под кат: Telegram сам покажет первые
-  // строки и кнопку «Показать полностью».
+  // строки и кнопку «Показать полностью». Дату здесь не пишем: над
+  // свёрнутой цитатой она висит оторванной строкой и только мешает.
   if (body.length > NOTE_INLINE || body.includes('\n')) {
-    return `💬 <i>${date}</i>\n<blockquote expandable>${esc(body)}</blockquote>`;
+    return `<blockquote expandable>${esc(body)}</blockquote>`;
   }
 
   return `💬 ${esc(body)}  <i>${date}</i>`;
