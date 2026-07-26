@@ -64,7 +64,11 @@ export function renderCard(card: EntryCard): string {
 
   const collections = card.collections.map((c) => `${c.icon ?? '📁'} ${esc(c.name)}`).join(', ');
   lines.push(header(card.entry.title ?? 'Без названия'));
-  if (collections) lines.push(`<i>${collections}</i>`);
+
+  // Раздел и дата создания в одной строке: это про запись целиком,
+  // а не содержимое, и разносить их по строкам незачем.
+  const meta = [collections, shortDate(card.entry.createdAt)].filter(Boolean).join(' · ');
+  if (meta) lines.push(`<i>${meta}</i>`);
 
   if (card.entry.body) {
     lines.push('', esc(card.entry.body));
