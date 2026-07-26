@@ -62,13 +62,19 @@ export function renderAttachment(
 export function renderCard(card: EntryCard): string {
   const lines: string[] = [];
 
-  const collections = card.collections.map((c) => `${c.icon ?? '📁'} ${esc(c.name)}`).join(', ');
   lines.push(header(card.entry.title ?? 'Без названия'));
 
-  // Раздел и дата создания в одной строке: это про запись целиком,
-  // а не содержимое, и разносить их по строкам незачем.
-  const meta = [collections, shortDate(card.entry.createdAt)].filter(Boolean).join(' · ');
-  if (meta) lines.push(`<i>${meta}</i>`);
+  // Дерево вместо строки через точку: символы ├ и └ сами читаются как
+  // «принадлежит», и каждый раздел виден отдельной ветвью.
+  const branches = [
+    ...card.collections.map((c) => `${c.icon ?? '📁'} ${esc(c.name)}`),
+    `🕘 ${shortDate(card.entry.createdAt)}`,
+  ];
+
+  branches.forEach((branch, index) => {
+    const glyph = index === branches.length - 1 ? '└' : '├';
+    lines.push(`${glyph} <i>${branch}</i>`);
+  });
 
   if (card.entry.body) {
     lines.push('', esc(card.entry.body));
