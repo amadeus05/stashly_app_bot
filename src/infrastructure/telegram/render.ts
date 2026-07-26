@@ -48,7 +48,7 @@ export function renderAttachment(
   if (detail.notes.length > 0) {
     lines.push('');
     for (const note of detail.notes) {
-      lines.push(`💬 ${esc(note.body ?? '')}`);
+      lines.push(`💬 ${esc(note.body ?? '')}  <i>${shortDate(note.createdAt)}</i>`);
     }
   }
 
@@ -84,7 +84,7 @@ export function renderCard(card: EntryCard): string {
   if (card.notes.length > 0) {
     lines.push('', `<b>Заметки</b>`);
     for (const note of card.notes.slice(0, 5)) {
-      lines.push(`💬 ${esc(note.body ?? '')}`);
+      lines.push(`💬 ${esc(note.body ?? '')}  <i>${shortDate(note.createdAt)}</i>`);
     }
     if (card.notes.length > 5) lines.push(`<i>…ещё ${card.notes.length - 5}</i>`);
   }
@@ -110,6 +110,22 @@ const HIT_ICON: Record<string, string> = { entry: '📄', attachment: '📎', no
 function pageLabel(page: Page<unknown>): string {
   if (page.page === 0 && !page.hasMore) return '';
   return `\n\n<i>стр. ${page.page + 1}</i>`;
+}
+
+/**
+ * Дата создания заметки.
+ *
+ * Только дата, без времени: метки хранятся в UTC, а часового пояса
+ * пользователя Telegram не сообщает. Показывать «23:05» тому, у кого
+ * на часах 02:05, хуже, чем не показывать время вовсе.
+ */
+function shortDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const dd = String(date.getUTCDate()).padStart(2, '0');
+  const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
+  return `${dd}.${mm}.${date.getUTCFullYear()}`;
 }
 
 /** Заголовок экрана. Цитата отделяет его от кнопок, не занимая места. */
