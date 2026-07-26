@@ -205,19 +205,54 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
       app.entries.tagIdsOf(objectId),
     ]);
 
-    await app.state.set(userId, 'idle', { target: objectId, page: String(page) });
-
-    // Первый тег заводить неоткуда — сразу просим ввести.
+    // Первый тег брать неоткуда — сразу просим ввести.
     if (tags.length === 0) {
       await app.state.set(userId, 'tag:name', { objectId });
       await ctx.reply('Тегов пока нет. Введите первый — можно несколько через запятую.', ASK);
       return;
     }
 
+    const chosen = new Set(selected);
+    const dialog = await app.state.get(userId);
+
+    /**
+     * Порядок фиксируем при открытии экрана: отмеченные сверху.
+     *
+     * Пересортировывать на каждый тап нельзя — кнопка уезжала бы из-под
+     * пальца, и следующее нажатие попадало бы по соседнему тегу.
+     */
+    let order: string[] = [];
+    if (dialog.payload.target === objectId && dialog.payload.order) {
+      try {
+        order = JSON.parse(dialog.payload.order) as string[];
+      } catch {
+        order = [];
+      }
+    }
+
+    // Список тегов изменился (завели новый) — порядок пересобираем.
+    if (order.length !== tags.length) {
+      order = [
+        ...tags.filter((tag) => chosen.has(tag.id)).map((tag) => tag.id),
+        ...tags.filter((tag) => !chosen.has(tag.id)).map((tag) => tag.id),
+      ];
+    }
+
+    const position = new Map(order.map((id, index) => [id, index]));
+    const ordered = [...tags].sort(
+      (a, b) => (position.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (position.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+    );
+
+    await app.state.set(userId, 'idle', {
+      target: objectId,
+      page: String(page),
+      order: JSON.stringify(order),
+    });
+
     await screen(
       ctx,
-      header('Теги') + '\nНажмите, чтобы поставить или снять. Сверху — те, что уже использовали в этом разделе.',
-      tagPicker(tags, new Set(selected), objectId, object.type === 'attachment', page),
+      header('Теги') + '\nНажмите, чтобы поставить или снять. Отмеченные — сверху.',
+      tagPicker(ordered, chosen, objectId, object.type === 'attachment', page),
       edit,
     );
   }
