@@ -175,6 +175,18 @@ function clamp(text: string, max: number): string {
 }
 
 /**
+ * Одна строка вместо абзаца.
+ *
+ * В строке совпадения бывает заметка с песней: переводы строк внутри
+ * растягивают её на пол-экрана, и выдача перестаёт читаться. Схлопываем
+ * пробелы и обрезаем — место совпадения показывает, что нашлось, а не
+ * содержимое целиком.
+ */
+function oneLine(text: string, max: number): string {
+  return clamp(text.replace(/\s+/gu, ' ').trim(), max);
+}
+
+/**
  * Собирает строки, пока не упрётся в лимит.
  *
  * Резать готовый HTML нельзя — обрыв внутри тега ломает разбор и
@@ -243,7 +255,7 @@ export function renderHits(
       if (hit.matchedType === 'entry') continue;
 
       lines.push('', `📄 <b>${esc(hit.entryTitle)}</b>`);
-      if (hit.snippet) lines.push(`└ ${HIT_ICON[hit.matchedType] ?? '·'} <i>${esc(hit.snippet)}</i>`);
+      if (hit.snippet) lines.push(`└ ${HIT_ICON[hit.matchedType] ?? '·'} <i>${esc(oneLine(hit.snippet, 70))}</i>`);
       continue;
     }
 
@@ -254,7 +266,7 @@ export function renderHits(
       const glyph = index === found.length - 1 ? '└' : '├';
       const icon = SITE_ICON[site.kind] ?? '·';
       const label = site.label ? `<b>${esc(site.label)}:</b> ` : '';
-      lines.push(`${glyph} ${icon} ${label}${esc(clamp(site.text, 90))}`);
+      lines.push(`${glyph} ${icon} ${label}${esc(oneLine(site.text, 70))}`);
     });
   }
 

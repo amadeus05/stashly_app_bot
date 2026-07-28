@@ -168,6 +168,16 @@ const twoSites = renderHits(
 check('первая ветвь — промежуточная', twoSites.includes('├ 🔹'), true);
 check('последняя — закрывающая', twoSites.includes('└ 💬'), true);
 
+// Заметка с песней разъезжалась на пол-экрана: переводы строк внутри
+// строки совпадения ломают выдачу.
+const multiline = renderHits(
+  { items: [hit], page: 0, hasMore: false },
+  'а',
+  new Map([['e1', [{ kind: 'note', label: '', text: 'C\n  Bm\nА я тебя ревную\nС\n  Bm\nА ты мне...', matched: true }]]]),
+);
+check('место совпадения — одна строка', multiline.split('\n').filter((l) => l.startsWith('└ 💬')).length, 1);
+check('переводы строк схлопнуты', /└ 💬 [^\n]*Bm[^\n]*ревную/.test(multiline), true);
+
 // Модель возвращает лишние поля, строку вместо числа, выдуманный
 // оператор. Проверяем не модель, а то, что мы делаем с её ответом.
 // Где совпало: сопоставление в JS, потому что LOWER() в SQLite не
