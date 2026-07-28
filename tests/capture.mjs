@@ -229,6 +229,50 @@ check('неизвестный has отброшен',
 check('теги приводятся к нижнему регистру',
   toParsedQuery({ intent: 'search', tags: ['Любимое'] }).query.tags, ['любимое']);
 
+// Время срабатывания считается в UTC, а понимается в местном времени:
+// «завтра в 9» — девять утра у пользователя, а не у сервера.
+console.log('\nразбор времени напоминания:');
+const { parseSchedule, needsTimezone, describeSchedule } = await import('../.test-build/domain/schedule.js');
+const NOW = Date.parse('2026-07-29T12:00:00Z'); // 15:00 при UTC+3
+const TZ = 180;
+
+const at = (phrase) => parseSchedule(phrase, NOW, TZ);
+const iso = (phrase) => new Date(at(phrase).at).toISOString();
+
+check('через 40 минут', iso('через 40 минут'), '2026-07-29T12:40:00.000Z');
+check('через 2 дня', iso('через 2 дня'), '2026-07-31T12:00:00.000Z');
+check('через час без числа', iso('через час'), '2026-07-29T13:00:00.000Z');
+check('завтра в 9 — по местному', iso('завтра в 9'), '2026-07-30T06:00:00.000Z');
+check('вечером — сегодня в 19 местного', iso('вечером'), '2026-07-29T16:00:00.000Z');
+check('в 9 уже прошло — значит завтра', iso('в 9'), '2026-07-30T06:00:00.000Z');
+check('в 18:30 сегодня', iso('в 18:30'), '2026-07-29T15:30:00.000Z');
+check('дата с временем', iso('05.08 в 18:30'), '2026-08-05T15:30:00.000Z');
+check('каждые 3 дня — повтор', at('каждые 3 дня').rule, { kind: 'every', minutes: 4320 });
+check('каждый день — повтор', at('каждый день').rule, { kind: 'every', minutes: 1440 });
+check('непонятное отвергается', parseSchedule('когда-нибудь потом', NOW, TZ), null);
+
+// «каждый понедельник и среду» молча превращалось в разовое напоминание:
+// правило не распозналось, а время «в 10:00» подхватилось отдельно.
+const { nextRun } = await import('../.test-build/domain/schedule.js');
+const weekly = at('каждый понедельник и среду в 10:00');
+check('дни недели распознаны', weekly.rule.days, [1, 3]);
+check('время недельного правила', [weekly.rule.hour, weekly.rule.minute], [10, 0]);
+check('пояс сохранён в правиле', weekly.rule.offset, TZ);
+// 29.07.2026 — среда; 10:00 местного это 07:00 UTC, уже прошло.
+check('ближайшее — следующий подходящий день',
+  new Date(weekly.at).toISOString(), '2026-08-03T07:00:00.000Z');
+check('следующее после срабатывания',
+  new Date(nextRun(weekly.rule, Date.parse('2026-08-03T07:00:00.000Z'))).toISOString(),
+  '2026-08-05T07:00:00.000Z');
+check('«по вторникам и пятницам»', at('по вторникам и пятницам в 19:00').rule.days, [2, 5]);
+check('разовое не переносится', nextRun({ kind: 'once' }, NOW), null);
+check('«через» не требует пояса', needsTimezone('через 40 минут'), false);
+check('«завтра в 9» требует пояса', needsTimezone('завтра в 9'), true);
+check('описание разового', describeSchedule('2026-08-05T15:30:00.000Z', { kind: 'once' }, TZ), '05.08 в 18:30');
+check('описание повтора',
+  describeSchedule('2026-08-05T15:30:00.000Z', { kind: 'every', minutes: 4320 }, TZ),
+  'каждые 3 дн. · ближайшее 05.08 в 18:30');
+
 console.log('\nтипы значений:');
 check('9,8 -> number', inferValue('9,8'), { type: 'number', valueText: null, valueNum: 9.8, valueDate: null });
 check('12:34 -> duration 754с', inferValue('12:34').valueNum, 754);

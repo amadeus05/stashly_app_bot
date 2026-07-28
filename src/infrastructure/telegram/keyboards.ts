@@ -70,6 +70,17 @@ export const CB = {
   editProperty: 'ep',
   editNote: 'en',
   renameAttachment: 'ra',
+  remind: 'rm',
+  remindIn: 'ri',
+  remindCustom: 'rc',
+  reminders: 'rl',
+  reminder: 'rd',
+  reminderPause: 'rp',
+  reminderDelete: 'rdx',
+  reminderText: 'rt',
+  reminderWhen: 'rw',
+  reminderSnooze: 'rs',
+  reminderOff: 'rx',
   fieldRename: 'frn',
   fieldRetype: 'frt',
   fieldRescope: 'frs',
@@ -459,6 +470,8 @@ export function mainMenu(entryCount: number, collectionCount: number): InlineKey
     .text('🔧 Поля', CB.fields)
     .text('🏷 Теги', CB.tags)
     .row()
+    .text('⏰ Напоминания', CB.reminders)
+    .row()
     .text('🔍 Поиск', CB.search)
     .text('➕ Новая запись', CB.newEntry);
 }
@@ -510,6 +523,8 @@ export function cardMenu(card: EntryCard): InlineKeyboard {
   if (card.properties.length + card.tags.length + card.notes.length > 0) {
     keyboard.text('✏️ Убрать лишнее', `${CB.manage}:${id}`).row();
   }
+
+  keyboard.text('⏰ Напомнить', `${CB.remind}:${id}`).row();
 
   return keyboard.text('🗑 Удалить', `${CB.deleteEntry}:${id}`).text('⬅️ Меню', CB.menu);
 }
@@ -616,4 +631,58 @@ export function hitList(page: Page<SearchHit>): InlineKeyboard {
 /** Ничего не нашлось — предлагаем сохранить сам запрос как новую запись. */
 export function saveOffer(): InlineKeyboard {
   return new InlineKeyboard().text('➕ Сохранить как запись', CB.savePending).row().text('⬅️ Меню', CB.menu);
+}
+
+/**
+ * Когда напомнить.
+ *
+ * Частое — одним тапом. Календарь из кнопок в Telegram неудобен всегда,
+ * поэтому произвольное время вводится фразой.
+ */
+export function whenPicker(objectId: string): InlineKeyboard {
+  const at = (code: string) => `${CB.remindIn}:${code}:${objectId}`;
+
+  return new InlineKeyboard()
+    .text('1 час', at('60'))
+    .text('3 часа', at('180'))
+    .text('Вечером', at('evening'))
+    .row()
+    .text('Завтра', at('tomorrow'))
+    .text('Неделя', at('10080'))
+    .text('Месяц', at('43200'))
+    .row()
+    .text('📅 Своё время', `${CB.remindCustom}:${objectId}`)
+    .row()
+    .text('✖️ Отмена', `${CB.entry}:${objectId}`);
+}
+
+export function remindersMenu(
+  items: Array<{ id: string; label: string; active: boolean }>,
+  page = 0,
+): InlineKeyboard {
+  const keyboard = new InlineKeyboard();
+  const chunk = slice(items, page);
+
+  for (const item of chunk.items) {
+    keyboard.text(`${item.active ? '⏰' : '⏸'} ${item.label}`.slice(0, 40), `${CB.reminder}:${item.id}`).row();
+  }
+
+  counterPager(keyboard, `${CB.reminders}:`, chunk.page, chunk.pages);
+  return keyboard.text('⬅️ Меню', CB.menu);
+}
+
+export function reminderCard(id: string, active: boolean, objectId: string | null): InlineKeyboard {
+  const keyboard = new InlineKeyboard()
+    .text('🕘 Когда', `${CB.reminderWhen}:${id}`)
+    .text('✏️ Текст', `${CB.reminderText}:${id}`)
+    .row();
+
+  if (objectId) keyboard.text('📄 Открыть запись', `${CB.entry}:${objectId}`).row();
+
+  return keyboard
+    .text(active ? '⏸ На паузу' : '▶️ Включить', `${CB.reminderPause}:${id}`)
+    .row()
+    .text('🗑 Удалить', `${CB.reminderDelete}:${id}`)
+    .row()
+    .text('⬅️ К напоминаниям', CB.reminders);
 }

@@ -18,6 +18,9 @@ import {
   tagsFilterMenu,
   tagsMenu,
   collectionCard,
+  reminderCard,
+  remindersMenu,
+  whenPicker,
   fieldsMenu,
   scopePicker,
   typePicker,
@@ -32,6 +35,8 @@ import {
   saveOffer,
 } from './keyboards.js';
 import { parseQuery, stripCommandPrefix } from '../../domain/query.js';
+import type { ScheduleRule } from '../../domain/schedule.js';
+import { describeSchedule, needsTimezone, parseSchedule } from '../../domain/schedule.js';
 import { parseIntent } from '../../ai/intent.js';
 import { transcribe } from '../../ai/transcribe.js';
 import { extractMedia, titleForMedia } from './media.js';
@@ -561,6 +566,86 @@ export function createBot(
     await showCard(ctx, userId, entryId);
   }
 
+
+  // ---------------------------------------------------------------------
+  // Напоминания
+  // ---------------------------------------------------------------------
+
+  /** Часовой пояс нужен всему, где есть «в 9 утра». Спрашиваем один раз. */
+  async function ensureTimezone(ctx: Context, userId: number, pending: Record<string, string>): Promise<boolean> {
+    const offset = await app.reminders.timezone(userId);
+    if (offset !== null) return true;
+
+    await app.state.set(userId, 'timezone', pending);
+    await ctx.reply(
+      'Сначала часовой пояс — иначе «в 9 утра» будет лотереей.\n\n' +
+        'Напишите смещение от UTC: <code>+3</code>, <code>+2</code>, <code>-5</code>.\n' +
+        'В Киеве и Москве это <code>+3</code>.',
+      ASK,
+    );
+    return false;
+  }
+
+  async function showReminders(ctx: Context, userId: number, page: number, edit: boolean): Promise<void> {
+    const [list, offset] = await Promise.all([
+      app.reminders.list(userId),
+      app.reminders.timezone(userId),
+    ]);
+
+    const items = list.map((item) => ({
+      id: item.id,
+      active: item.active,
+      label: `${item.entryTitle ?? item.text ?? 'без описания'} · ${describeSchedule(item.nextAt, item.rule, offset ?? 0)}`,
+    }));
+
+    const text =
+      items.length === 0
+        ? `${header('Напоминания')}\nПока пусто. Откройте запись и нажмите «⏰ Напомнить».`
+        : `${header('Напоминания')}\n⏰ активные · ⏸ на паузе`;
+
+    await screen(ctx, text, remindersMenu(items, page), edit);
+  }
+
+  async function showReminder(ctx: Context, userId: number, id: string, edit: boolean): Promise<void> {
+    const [reminder, offset] = await Promise.all([
+      app.reminders.find(userId, id),
+      app.reminders.timezone(userId),
+    ]);
+
+    if (!reminder) {
+      await ctx.reply('Напоминание не найдено.');
+      return;
+    }
+
+    const lines = [
+      header(reminder.entryTitle ?? reminder.text ?? 'Напоминание'),
+      `├ <i>${describeSchedule(reminder.nextAt, reminder.rule, offset ?? 0)}</i>`,
+      `└ <i>${reminder.active ? 'активно' : 'на паузе'}</i>`,
+    ];
+
+    if (reminder.text && reminder.entryTitle) lines.push('', `💬 ${esc(reminder.text)}`);
+
+    await screen(ctx, lines.join('\n'), reminderCard(id, reminder.active, reminder.objectId), edit);
+  }
+
+  /** Создаёт напоминание и показывает, как бот понял время. */
+  async function createReminder(
+    ctx: Context,
+    userId: number,
+    objectId: string | null,
+    at: number,
+    rule: ScheduleRule,
+  ): Promise<void> {
+    const offset = (await app.reminders.timezone(userId)) ?? 0;
+    const id = await app.reminders.create(userId, objectId, null, new Date(at).toISOString(), rule);
+
+    await app.state.clear(userId);
+    await ctx.reply(
+      `⏰ Напомню: <b>${esc(describeSchedule(new Date(at).toISOString(), rule, offset))}</b>`,
+      { ...HTML, reply_markup: reminderCard(id, true, objectId) },
+    );
+  }
+
   // ---------------------------------------------------------------------
   // Команды
   // ---------------------------------------------------------------------
@@ -621,6 +706,21 @@ export function createBot(
         '<b>Поля</b> печатайте как удобно — тип определится сам: <code>9.8</code> число, ' +
         '<code>01.07.2026</code> дата, <code>12:34</code> тайминг, <code>да</code> флажок.',
       HTML,
+    );
+  });
+
+  bot.command('tz', async (ctx) => {
+    const userId = userIdOf(ctx);
+    if (!userId) return;
+
+    const offset = await app.reminders.timezone(userId);
+    await app.state.set(userId, 'timezone');
+    await ctx.reply(
+      `Часовой пояс${offset !== null ? ` сейчас: UTC${offset >= 0 ? '+' : ''}${offset / 60}` : ' не задан'}.
+
+` +
+        'Напишите смещение от UTC: <code>+3</code>, <code>-5</code>, <code>+5:30</code>.',
+      ASK,
     );
   });
 
@@ -868,6 +968,93 @@ export function createBot(
 
       case CB.addTag:
         if (arg) await showTagPicker(ctx, userId, arg, true);
+        return;
+
+      case CB.remind: {
+        if (!arg) return;
+        await screen(ctx, header('Когда напомнить'), whenPicker(arg), true);
+        return;
+      }
+
+      case CB.remindIn: {
+        // arg — сколько минут либо именованный момент; extra — запись.
+        if (!arg || !extra) return;
+
+        const minutes = Number(arg);
+        if (Number.isFinite(minutes)) {
+          await createReminder(ctx, userId, extra, Date.now() + minutes * 60_000, { kind: 'once' });
+          return;
+        }
+
+        // «Вечером» и «Завтра» зависят от часового пояса.
+        if (!(await ensureTimezone(ctx, userId, { objectId: extra, phrase: arg }))) return;
+
+        const offset = (await app.reminders.timezone(userId)) ?? 0;
+        const schedule = parseSchedule(arg === 'evening' ? 'вечером' : 'завтра', Date.now(), offset);
+        if (schedule) await createReminder(ctx, userId, extra, schedule.at, schedule.rule);
+        return;
+      }
+
+      case CB.remindCustom: {
+        if (!arg) return;
+        await app.state.set(userId, 'reminder:when', { objectId: arg });
+        await ctx.reply(
+          'Когда напомнить? Напишите как удобно:\n\n' +
+            '<code>через 40 минут</code> · <code>завтра в 9</code>\n' +
+            '<code>05.08 в 18:30</code> · <code>каждые 3 дня</code>',
+          ASK,
+        );
+        return;
+      }
+
+      case CB.reminders:
+        await showReminders(ctx, userId, Number(arg ?? '0'), true);
+        return;
+
+      case CB.reminder:
+        if (arg) await showReminder(ctx, userId, arg, true);
+        return;
+
+      case CB.reminderPause: {
+        if (!arg) return;
+        const reminder = await app.reminders.find(userId, arg);
+        if (!reminder) return;
+
+        await app.reminders.setActive(userId, arg, !reminder.active);
+        await showReminder(ctx, userId, arg, true);
+        return;
+      }
+
+      case CB.reminderDelete:
+        if (!arg) return;
+        await app.reminders.delete(userId, arg);
+        await showReminders(ctx, userId, 0, true);
+        return;
+
+      case CB.reminderText:
+        if (!arg) return;
+        await app.state.set(userId, 'reminder:text', { reminderId: arg });
+        await ctx.reply('Что приписать к напоминанию?', ASK);
+        return;
+
+      case CB.reminderWhen:
+        if (!arg) return;
+        await app.state.set(userId, 'reminder:when', { reminderId: arg });
+        await ctx.reply('Когда напоминать? Например: <code>завтра в 9</code>', ASK);
+        return;
+
+      // Кнопки под самим уведомлением.
+      case CB.reminderSnooze: {
+        if (!arg) return;
+        await app.reminders.reschedule(userId, arg, new Date(Date.now() + 60 * 60_000).toISOString());
+        await ctx.reply('😴 Напомню через час.');
+        return;
+      }
+
+      case CB.reminderOff:
+        if (!arg) return;
+        await app.reminders.setActive(userId, arg, false);
+        await ctx.reply('Больше не напомню. Включить можно в «⏰ Напоминания».');
         return;
 
       case CB.noop:
@@ -1541,6 +1728,79 @@ export function createBot(
           `Тип значения для «${esc(input)}»?\n\nОт типа зависит проверка ввода и сравнения в поиске.`,
           { ...HTML, reply_markup: typePicker() },
         );
+        return;
+      }
+
+      case 'timezone': {
+        const match = /^([+-]?\d{1,2})(?:[:.](\d{2}))?$/.exec(input.replace(/\s+/gu, ''));
+        if (!match) {
+          await ctx.reply('Нужно смещение от UTC: +3, -5, +5:30', ASK);
+          return;
+        }
+
+        const hours = Number(match[1]);
+        const minutes = (match[2] ? Number(match[2]) : 0) * Math.sign(hours || 1);
+        await app.reminders.setTimezone(userId, hours * 60 + minutes);
+
+        // Возвращаемся к тому, ради чего спрашивали.
+        const phrase = dialog.payload.phrase;
+        const objectId = dialog.payload.objectId ?? null;
+
+        if (phrase) {
+          const schedule = parseSchedule(
+            phrase === 'evening' ? 'вечером' : phrase === 'tomorrow' ? 'завтра' : phrase,
+            Date.now(),
+            hours * 60 + minutes,
+          );
+          if (schedule) {
+            await createReminder(ctx, userId, objectId, schedule.at, schedule.rule);
+            return;
+          }
+        }
+
+        await app.state.clear(userId);
+        await ctx.reply(`Часовой пояс сохранён: UTC${hours >= 0 ? '+' : ''}${hours}`);
+        return;
+      }
+
+      case 'reminder:when': {
+        const reminderId = dialog.payload.reminderId;
+        const objectId = dialog.payload.objectId ?? null;
+
+        if (needsTimezone(input) && !(await ensureTimezone(ctx, userId, { ...dialog.payload, phrase: input }))) {
+          return;
+        }
+
+        const offset = (await app.reminders.timezone(userId)) ?? 0;
+        const schedule = parseSchedule(input, Date.now(), offset);
+
+        if (!schedule) {
+          await ctx.reply(
+            'Не понял время. Попробуйте так: «через 40 минут», «завтра в 9», «05.08 в 18:30», «каждые 3 дня».',
+            ASK,
+          );
+          return;
+        }
+
+        // Правка существующего или создание нового — экран один.
+        if (reminderId) {
+          await app.reminders.reschedule(userId, reminderId, new Date(schedule.at).toISOString());
+          await app.state.clear(userId);
+          await showReminder(ctx, userId, reminderId, false);
+          return;
+        }
+
+        await createReminder(ctx, userId, objectId, schedule.at, schedule.rule);
+        return;
+      }
+
+      case 'reminder:text': {
+        const reminderId = dialog.payload.reminderId;
+        if (!reminderId) return;
+
+        await app.reminders.setText(userId, reminderId, input);
+        await app.state.clear(userId);
+        await showReminder(ctx, userId, reminderId, false);
         return;
       }
 

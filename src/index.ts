@@ -2,6 +2,7 @@ import { webhookCallback } from 'grammy';
 import type { UserFromGetMe } from 'grammy/types';
 import { SearchRepository } from './infrastructure/d1/search.js';
 import { StateRepository } from './infrastructure/d1/state.js';
+import { ReminderService } from './application/reminders.js';
 import { createBot } from './infrastructure/telegram/bot.js';
 
 export interface Env {
@@ -100,9 +101,14 @@ export default {
   },
 
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    // Страховка на случай, если воркер умер между мутацией и переиндексацией.
     ctx.waitUntil(
       (async () => {
+        // Раз в минуту — рассылка напоминаний. Сначала она: индекс подождёт,
+        // а напоминание, пришедшее на минуту позже, уже раздражает.
+        const sent = await new ReminderService(env.DB, env.BOT_TOKEN).deliverDue();
+        if (sent > 0) console.log('reminders sent', sent);
+
+        // Страховка на случай, если воркер умер между мутацией и переиндексацией.
         await new SearchRepository(env.DB).flushDirty(1000);
         await new StateRepository(env.DB).purgeExpired();
       })(),

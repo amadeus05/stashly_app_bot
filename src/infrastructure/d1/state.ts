@@ -28,7 +28,10 @@ export type DialogState =
   | 'collection:rename'
   | 'collection:icon'
   | 'note:edit'
-  | 'attachment:rename';
+  | 'attachment:rename'
+  | 'reminder:when'
+  | 'reminder:text'
+  | 'timezone';
 
 export interface Dialog {
   state: DialogState;

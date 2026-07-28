@@ -10,6 +10,7 @@ import { EntryRepository } from '../infrastructure/d1/entries.js';
 import { FieldRepository } from '../infrastructure/d1/fields.js';
 import { SearchRepository } from '../infrastructure/d1/search.js';
 import { StateRepository } from '../infrastructure/d1/state.js';
+import { ReminderRepository } from '../infrastructure/d1/reminders.js';
 import { TagRepository } from '../infrastructure/d1/tags.js';
 import { UserRepository } from '../infrastructure/d1/users.js';
 
@@ -49,6 +50,7 @@ export class NoteKeeper {
   readonly state: StateRepository;
   readonly fields: FieldRepository;
   readonly tagBook: TagRepository;
+  readonly reminders: ReminderRepository;
 
   constructor(db: D1Database) {
     this.users = new UserRepository(db);
@@ -58,6 +60,7 @@ export class NoteKeeper {
     this.state = new StateRepository(db);
     this.fields = new FieldRepository(db);
     this.tagBook = new TagRepository(db);
+    this.reminders = new ReminderRepository(db);
   }
 
   /**
