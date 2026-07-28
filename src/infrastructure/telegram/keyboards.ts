@@ -52,6 +52,11 @@ export const CB = {
   fieldOptions: 'fol',
   optionsPage: 'op',
   deleteOption: 'dox',
+  fieldRename: 'frn',
+  fieldRetype: 'frt',
+  fieldRescope: 'frs',
+  fieldRetarget: 'frg',
+  fieldTarget: 'ftg',
   deleteProperty: 'dp',
   deleteTag: 'dt',
   deleteNote: 'dn',
@@ -105,9 +110,27 @@ export function fieldCard(defId: string, hasOptions: boolean): InlineKeyboard {
 
   return keyboard
     .row()
+    .text('✏️ Имя', `${CB.fieldRename}:${defId}`)
+    .text('🔤 Тип', `${CB.fieldRetype}:${defId}`)
+    .row()
+    .text('📌 Область', `${CB.fieldRescope}:${defId}`)
+    .text('🎯 Для чего', `${CB.fieldRetarget}:${defId}`)
+    .row()
     .text('🗑 Удалить поле', `${CB.fieldDelete}:${defId}`)
     .row()
     .text('⬅️ К полям', CB.fields);
+}
+
+/** К записям, к вложениям или к тому и другому. */
+export function targetPicker(defId: string): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('📄 Записей', `${CB.fieldTarget}:entry`)
+    .row()
+    .text('📎 Вложений', `${CB.fieldTarget}:attachment`)
+    .row()
+    .text('Всего сразу', `${CB.fieldTarget}:any`)
+    .row()
+    .text('⬅️ Назад', `${CB.field}:${defId}`);
 }
 
 /** Правка списка значений: тап удаляет, добавление — отдельной кнопкой. */

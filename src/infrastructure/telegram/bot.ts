@@ -12,6 +12,7 @@ import {
   fieldCard,
   fieldFilterMenu,
   optionsMenu,
+  targetPicker,
   fieldsMenu,
   scopePicker,
   typePicker,
@@ -828,6 +829,29 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
 
       case CB.fieldType: {
         const dialog = await app.state.get(userId);
+
+        // Правка существующего поля: тип меняется сразу.
+        if (dialog.payload.defId) {
+          const type = arg === 'auto' ? null : ((arg ?? null) as PropertyType | null);
+          const conflict = await app.fields.setType(userId, dialog.payload.defId, type);
+          if (conflict) {
+            await ctx.reply(conflict);
+            return;
+          }
+
+          // Старые значения не переписываем — предупреждаем честно.
+          const stale = type ? await app.fields.countMismatched(userId, dialog.payload.defId, type) : 0;
+          if (stale > 0) {
+            await ctx.reply(
+              `Тип изменён. ${stale} уже записанных значений остались прежнего типа — ` +
+                `проверка касается только нового ввода, а сравнения в поиске их не увидят.`,
+            );
+          }
+
+          await showField(ctx, userId, dialog.payload.defId, true);
+          return;
+        }
+
         if (!dialog.payload.key) return;
 
         const collections = await app.collections.list(userId);
@@ -841,6 +865,21 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
 
       case CB.fieldScope: {
         const dialog = await app.state.get(userId);
+
+        if (dialog.payload.defId) {
+          const conflict = await app.fields.setScope(
+            userId,
+            dialog.payload.defId,
+            arg === 'global' ? null : (arg ?? null),
+          );
+          if (conflict) {
+            await ctx.reply(conflict);
+            return;
+          }
+          await showField(ctx, userId, dialog.payload.defId, true);
+          return;
+        }
+
         const key = dialog.payload.key;
         if (!key) return;
 
@@ -871,6 +910,49 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
         await app.fields.delete(userId, arg);
         await showFields(ctx, userId, 0, true);
         return;
+
+      case CB.fieldRename:
+        if (!arg) return;
+        await app.state.set(userId, 'field:rename', { defId: arg });
+        await ctx.reply('Новое название поля?', ASK);
+        return;
+
+      case CB.fieldRetype: {
+        if (!arg) return;
+        // defId в состоянии отличает правку от создания: экран выбора
+        // типа один и тот же, а ветки разные.
+        await app.state.set(userId, 'idle', { defId: arg });
+        await screen(ctx, header('Тип значения') + '\nОт типа зависит проверка ввода.', typePicker(), true);
+        return;
+      }
+
+      case CB.fieldRescope: {
+        if (!arg) return;
+        const collections = await app.collections.list(userId);
+        await app.state.set(userId, 'idle', { defId: arg });
+        await screen(ctx, header('Где доступно'), scopePicker(collections), true);
+        return;
+      }
+
+      case CB.fieldRetarget:
+        if (!arg) return;
+        await app.state.set(userId, 'idle', { defId: arg });
+        await screen(ctx, header('Для чего') + '\nГде предлагать это поле.', targetPicker(arg), true);
+        return;
+
+      case CB.fieldTarget: {
+        const dialog = await app.state.get(userId);
+        const defId = dialog.payload.defId;
+        if (!defId || !arg) return;
+
+        const conflict = await app.fields.setTarget(userId, defId, arg as 'entry' | 'attachment' | 'any');
+        if (conflict) {
+          await ctx.reply(conflict);
+          return;
+        }
+        await showField(ctx, userId, defId, true);
+        return;
+      }
 
       case CB.fieldOptions:
         if (arg) await showOptions(ctx, userId, arg, 0);
@@ -1209,6 +1291,27 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
           `Тип значения для «${esc(input)}»?\n\nОт типа зависит проверка ввода и сравнения в поиске.`,
           { ...HTML, reply_markup: typePicker() },
         );
+        return;
+      }
+
+      case 'field:rename': {
+        const defId = dialog.payload.defId;
+        if (!defId) return;
+
+        const problem = NoteKeeper.validateName(input);
+        if (problem) {
+          await ctx.reply(`${problem}\n\nВведите название ещё раз.`, ASK);
+          return;
+        }
+
+        const conflict = await app.fields.rename(userId, defId, input);
+        if (conflict) {
+          await ctx.reply(`${conflict}\n\nВведите другое название.`, ASK);
+          return;
+        }
+
+        await app.state.clear(userId);
+        await showField(ctx, userId, defId, false);
         return;
       }
 

@@ -20,7 +20,8 @@ export type DialogState =
   | 'field:key'
   | 'field:type'
   | 'field:scope'
-  | 'field:options';
+  | 'field:options'
+  | 'field:rename';
 
 export interface Dialog {
   state: DialogState;

@@ -152,18 +152,68 @@ export class FieldRepository {
       .run();
   }
 
-  async rename(userId: number, defId: string, key: string): Promise<void> {
-    await this.db
-      .prepare(`UPDATE field_defs SET key = ?3, key_norm = ?4 WHERE id = ?1 AND user_id = ?2`)
-      .bind(defId, userId, key.trim(), norm(key))
-      .run();
+  /**
+   * Правка поля. Имя, область и применимость входят в уникальный индекс,
+   * поэтому изменение любого из них может столкнуться с существующим
+   * полем — возвращаем это словами, а не пятисотой ошибкой.
+   */
+  private async update(
+    userId: number,
+    defId: string,
+    column: 'key' | 'collection_id' | 'target' | 'type',
+    value: string | null,
+    extra?: { key_norm: string },
+  ): Promise<string | null> {
+    const sql = extra
+      ? `UPDATE field_defs SET key = ?3, key_norm = ?4 WHERE id = ?1 AND user_id = ?2`
+      : `UPDATE field_defs SET ${column} = ?3 WHERE id = ?1 AND user_id = ?2`;
+
+    try {
+      const statement = this.db.prepare(sql);
+      await (extra ? statement.bind(defId, userId, value, extra.key_norm) : statement.bind(defId, userId, value)).run();
+      return null;
+    } catch (error) {
+      if (String(error).includes('UNIQUE')) {
+        return 'Такое поле уже есть — имя должно быть уникальным в своей области.';
+      }
+      throw error;
+    }
   }
 
-  async setType(userId: number, defId: string, type: PropertyType | null): Promise<void> {
-    await this.db
-      .prepare(`UPDATE field_defs SET type = ?3 WHERE id = ?1 AND user_id = ?2`)
+  async rename(userId: number, defId: string, key: string): Promise<string | null> {
+    return this.update(userId, defId, 'key', key.trim(), { key_norm: norm(key) });
+  }
+
+  async setType(userId: number, defId: string, type: PropertyType | null): Promise<string | null> {
+    return this.update(userId, defId, 'type', type);
+  }
+
+  async setScope(userId: number, defId: string, collectionId: string | null): Promise<string | null> {
+    return this.update(userId, defId, 'collection_id', collectionId);
+  }
+
+  async setTarget(userId: number, defId: string, target: FieldTarget): Promise<string | null> {
+    return this.update(userId, defId, 'target', target);
+  }
+
+  /**
+   * Сколько уже записанных значений не совпадёт с новым типом.
+   *
+   * Смена типа не переписывает данные — она включает проверку для нового
+   * ввода. Старые значения останутся как есть, и молчать об этом нельзя:
+   * человек решит, что теперь всё поле числовое, а фильтры их не увидят.
+   */
+  async countMismatched(userId: number, defId: string, type: PropertyType): Promise<number> {
+    const row = await this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM properties p
+         JOIN field_defs f ON f.key_norm = p.key_norm AND f.user_id = p.user_id
+         WHERE f.id = ?1 AND p.user_id = ?2 AND p.type <> ?3`,
+      )
       .bind(defId, userId, type)
-      .run();
+      .first<{ n: number }>();
+
+    return row?.n ?? 0;
   }
 
   // --- значения ------------------------------------------------------------
