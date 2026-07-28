@@ -21,6 +21,8 @@ export interface Page<T> {
   hasMore: boolean;
   /** Известно, только когда список посчитан целиком — для счётчика «2/3». */
   pages?: number;
+  /** Сколько всего нашлось — показываем в заголовке выдачи. */
+  total?: number;
 }
 
 /**
@@ -217,8 +219,15 @@ export class NoteKeeper {
 
   /** Тот же поиск, но по готовой структуре — её собирает разбор речи. */
   async findParsed(userId: number, query: ParsedQuery, page = 0): Promise<Page<SearchHit>> {
-    const hits = await this.search.search(userId, query, PAGE_SIZE + 1, page * PAGE_SIZE);
-    return paginate(hits, page);
+    const { hits, total } = await this.search.search(userId, query, PAGE_SIZE, page * PAGE_SIZE);
+
+    return {
+      items: hits,
+      page,
+      hasMore: (page + 1) * PAGE_SIZE < total,
+      pages: Math.max(1, Math.ceil(total / PAGE_SIZE)),
+      total,
+    };
   }
 
   /** Что подставить модели в промпт: только то, что у пользователя есть. */

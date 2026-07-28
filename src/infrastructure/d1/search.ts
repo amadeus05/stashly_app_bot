@@ -94,7 +94,12 @@ export class SearchRepository {
     return results.length;
   }
 
-  async search(userId: number, query: ParsedQuery, limit: number, offset: number): Promise<SearchHit[]> {
+  async search(
+    userId: number,
+    query: ParsedQuery,
+    limit: number,
+    offset: number,
+  ): Promise<{ hits: SearchHit[]; total: number }> {
     const match = toMatchExpression(query.text);
     const binds: unknown[] = [];
     let n = 0;
@@ -191,34 +196,44 @@ export class SearchRepository {
 
     // MIN(rank) + GROUP BY: SQLite отдаёт остальные колонки из той же строки,
     // то есть на запись остаётся одно, самое релевантное попадание.
-    const sql = `
+    // Ядро без сортировки и постраничности: по нему считаем и количество,
+    // и саму страницу — чтобы условия отбора не разъехались между двумя
+    // запросами.
+    const core = `
       WITH ${ftsCte}matches AS (${matchCte})
       SELECT m.root_id, e.title AS entry_title, m.matched_id, m.matched_type, m.snip,
-             MIN(m.rank) AS best
+             MIN(m.rank) AS best, e.updated_at AS updated_at
       FROM matches m
       JOIN objects e ON e.id = m.root_id AND e.type = 'entry'
       ${where}
-      GROUP BY m.root_id
-      ORDER BY best, e.updated_at DESC
-      LIMIT ${next(limit)} OFFSET ${next(offset)}`;
+      GROUP BY m.root_id`;
 
-    const { results } = await this.db
-      .prepare(sql)
-      .bind(...binds)
-      .all<{
-        root_id: string;
-        entry_title: string | null;
-        matched_id: string;
-        matched_type: ObjectType;
-        snip: string;
-      }>();
+    const [page, total] = await Promise.all([
+      this.db
+        .prepare(`${core} ORDER BY best, updated_at DESC LIMIT ?${n + 1} OFFSET ?${n + 2}`)
+        .bind(...binds, limit, offset)
+        .all<{
+          root_id: string;
+          entry_title: string | null;
+          matched_id: string;
+          matched_type: ObjectType;
+          snip: string;
+        }>(),
+      this.db
+        .prepare(`SELECT COUNT(*) AS n FROM (${core})`)
+        .bind(...binds)
+        .first<{ n: number }>(),
+    ]);
 
-    return results.map((row) => ({
-      entryId: row.root_id,
-      entryTitle: row.entry_title ?? 'Без названия',
-      matchedObjectId: row.matched_id,
-      matchedType: row.matched_type,
-      snippet: row.snip ?? '',
-    }));
+    return {
+      total: total?.n ?? page.results.length,
+      hits: page.results.map((row) => ({
+        entryId: row.root_id,
+        entryTitle: row.entry_title ?? 'Без названия',
+        matchedObjectId: row.matched_id,
+        matchedType: row.matched_type,
+        snippet: row.snip ?? '',
+      })),
+    };
   }
 }
