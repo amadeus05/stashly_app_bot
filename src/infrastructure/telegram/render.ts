@@ -221,6 +221,14 @@ function renderNote(note: StoredObject): string {
   return `💬 ${esc(body)}`;
 }
 
+/**
+ * Отступ ветвей выдачи.
+ *
+ * Ветвь должна расти от значка записи, а не от её номера — иначе кажется,
+ * что поле принадлежит цифре в скобках.
+ */
+const BRANCH_INDENT = '       ';
+
 const SITE_ICON: Record<string, string> = {
   property: '🔹',
   note: '💬',
@@ -247,28 +255,29 @@ export function renderHits(
 
   // Показываем, ГДЕ совпало: из одной кнопки с названием непонятно,
   // почему запись вообще оказалась в выдаче.
-  for (const hit of page.items) {
+  // Номер связывает строку с кнопкой: кнопки теперь короткие, по номеру,
+  // иначе восемь длинных названий занимают весь экран.
+  page.items.forEach((hit, position) => {
+    lines.push('', `<b>[${position + 1}]</b> 📄 <b>${esc(hit.entryTitle)}</b>`);
+
     const found = sites?.get(hit.entryId) ?? [];
 
     if (found.length === 0) {
-      // Совпало по названию — кнопка уже всё сказала, повторяться незачем.
-      if (hit.matchedType === 'entry') continue;
-
-      lines.push('', `📄 <b>${esc(hit.entryTitle)}</b>`);
-      if (hit.snippet) lines.push(`└ ${HIT_ICON[hit.matchedType] ?? '·'} <i>${esc(oneLine(hit.snippet, 70))}</i>`);
-      continue;
+      // Совпало по названию — оно уже в строке выше, повторяться незачем.
+      if (hit.matchedType !== 'entry' && hit.snippet) {
+        lines.push(`${BRANCH_INDENT}└ ${HIT_ICON[hit.matchedType] ?? '·'} <i>${esc(oneLine(hit.snippet, 70))}</i>`);
+      }
+      return;
     }
-
-    lines.push('', `📄 <b>${esc(hit.entryTitle)}</b>`);
 
     // Дерево: ├ и └ сами читаются как «внутри этой записи».
     found.forEach((site, index) => {
       const glyph = index === found.length - 1 ? '└' : '├';
       const icon = SITE_ICON[site.kind] ?? '·';
       const label = site.label ? `<b>${esc(site.label)}:</b> ` : '';
-      lines.push(`${glyph} ${icon} ${label}${esc(oneLine(site.text, 70))}`);
+      lines.push(`${BRANCH_INDENT}${glyph} ${icon} ${label}${esc(oneLine(site.text, 70))}`);
     });
-  }
+  });
 
   return joinWithin(lines, CARD_LIMIT) + pageLabel(page);
 }

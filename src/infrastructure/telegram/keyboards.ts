@@ -69,6 +69,7 @@ export const CB = {
   collectionIcon: 'cic',
   editProperty: 'ep',
   editNote: 'en',
+  renameAttachment: 'ra',
   fieldRename: 'frn',
   fieldRetype: 'frt',
   fieldRescope: 'frs',
@@ -443,17 +444,23 @@ function slice<T>(items: T[], page: number): { items: T[]; page: number; pages: 
   return { items: items.slice(safe * PICKER_PAGE, (safe + 1) * PICKER_PAGE), page: safe, pages };
 }
 
+/**
+ * Три ряда по две кнопки.
+ *
+ * Сверху просмотр — разделы и недавние, посередине справочники, внизу
+ * действия: поиск и создание. Действия ниже, потому что до них дотянуться
+ * большим пальцем проще всего.
+ */
 export function mainMenu(entryCount: number, collectionCount: number): InlineKeyboard {
   return new InlineKeyboard()
-    .text('➕ Новая запись', CB.newEntry)
-    .row()
     .text(`📁 Разделы (${collectionCount})`, CB.collections)
     .text(`🕘 Недавние (${entryCount})`, `${CB.recent}:0`)
     .row()
-    .text('🔍 Поиск', CB.search)
-    .row()
     .text('🔧 Поля', CB.fields)
-    .text('🏷 Теги', CB.tags);
+    .text('🏷 Теги', CB.tags)
+    .row()
+    .text('🔍 Поиск', CB.search)
+    .text('➕ Новая запись', CB.newEntry);
 }
 
 export function collectionsMenu(
@@ -535,6 +542,8 @@ export function attachmentMenu(attachmentId: string, entryId: string, hasItems =
   const keyboard = new InlineKeyboard()
     .text('➕ Поле', `${CB.addProperty}:${attachmentId}`)
     .text('💬 Заметка', `${CB.addNote}:${attachmentId}`)
+    .row()
+    .text('✏️ Название', `${CB.renameAttachment}:${attachmentId}`)
     .row();
 
   if (hasItems) {
@@ -580,12 +589,28 @@ export function collectionCard(collectionId: string): InlineKeyboard {
     .text('⬅️ К разделу', `${CB.collection}:${collectionId}:0`);
 }
 
+/**
+ * Кнопки выдачи — номерами, по четыре в ряд.
+ *
+ * Названия уже перечислены в тексте с теми же номерами. Восемь кнопок с
+ * полными названиями занимали пол-экрана и оттесняли саму выдачу вверх.
+ */
 export function hitList(page: Page<SearchHit>): InlineKeyboard {
   const keyboard = new InlineKeyboard();
-  for (const hit of page.items) {
-    keyboard.text(`📄 ${hit.entryTitle}`, `${CB.entry}:${hit.entryId}`).row();
+
+  page.items.forEach((hit, position) => {
+    keyboard.text(String(position + 1), `${CB.entry}:${hit.entryId}`);
+    if (position % 4 === 3) keyboard.row();
+  });
+  if (page.items.length % 4 !== 0) keyboard.row();
+
+  if (page.pages !== undefined) {
+    counterPager(keyboard, `${CB.searchPage}:`, page.page, page.pages);
+  } else {
+    pager(keyboard, `${CB.searchPage}:`, page);
   }
-  return pager(keyboard, `${CB.searchPage}:`, page).text('⬅️ Меню', CB.menu);
+
+  return keyboard.text('⬅️ Меню', CB.menu);
 }
 
 /** Ничего не нашлось — предлагаем сохранить сам запрос как новую запись. */

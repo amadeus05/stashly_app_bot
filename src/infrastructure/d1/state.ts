@@ -27,7 +27,8 @@ export type DialogState =
   | 'tag:rename'
   | 'collection:rename'
   | 'collection:icon'
-  | 'note:edit';
+  | 'note:edit'
+  | 'attachment:rename';
 
 export interface Dialog {
   state: DialogState;

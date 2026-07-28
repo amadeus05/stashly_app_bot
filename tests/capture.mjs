@@ -153,7 +153,7 @@ console.log('\nотрисовка выдачи:');
 check('поле попало в выдачу', rendered.includes('Оценка:</b> 5'), true);
 check('название записи показано', rendered.includes('Liza Evans'), true);
 check('старый формат ушёл', rendered.includes(' — '), false);
-check('единственное место — закрывающая ветвь', rendered.includes('└ 🔹'), true);
+check('единственное место — закрывающая ветвь', rendered.includes('       └ 🔹'), true);
 
 const twoSites = renderHits(
   { items: [hit], page: 0, hasMore: false },
@@ -165,8 +165,8 @@ const twoSites = renderHits(
     ]],
   ]),
 );
-check('первая ветвь — промежуточная', twoSites.includes('├ 🔹'), true);
-check('последняя — закрывающая', twoSites.includes('└ 💬'), true);
+check('первая ветвь — промежуточная', twoSites.includes('       ├ 🔹'), true);
+check('последняя — закрывающая', twoSites.includes('       └ 💬'), true);
 
 // Заметка с песней разъезжалась на пол-экрана: переводы строк внутри
 // строки совпадения ломают выдачу.
@@ -175,7 +175,14 @@ const multiline = renderHits(
   'а',
   new Map([['e1', [{ kind: 'note', label: '', text: 'C\n  Bm\nА я тебя ревную\nС\n  Bm\nА ты мне...', matched: true }]]]),
 );
-check('место совпадения — одна строка', multiline.split('\n').filter((l) => l.startsWith('└ 💬')).length, 1);
+check('место совпадения — одна строка', multiline.split('\n').filter((l) => l.startsWith('       └ 💬')).length, 1);
+check('номер связывает строку с кнопкой', rendered.includes('[1]'), true);
+
+const { hitList } = await import('../.test-build/infrastructure/telegram/keyboards.js');
+const manyHits = Array.from({ length: 6 }, (_, i) => ({ ...hit, entryId: `e${i}`, entryTitle: `Запись ${i}` }));
+const kb = hitList({ items: manyHits, page: 0, hasMore: false, pages: 1 }).inline_keyboard;
+check('кнопки — номерами', kb[0].map((b) => b.text), ['1', '2', '3', '4']);
+check('по четыре в ряд', kb[1].map((b) => b.text), ['5', '6']);
 check('переводы строк схлопнуты', /└ 💬 [^\n]*Bm[^\n]*ревную/.test(multiline), true);
 
 // Модель возвращает лишние поля, строку вместо числа, выдуманный

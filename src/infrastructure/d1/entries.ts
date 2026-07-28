@@ -369,6 +369,16 @@ export class EntryRepository {
     return row ? { objectId: row.object_id, key: row.key } : null;
   }
 
+  /** Название объекта: у вложения это подпись в списке. */
+  async rename(userId: number, objectId: string, title: string): Promise<void> {
+    await this.db
+      .prepare(`UPDATE objects SET title = ?3, updated_at = ?4 WHERE id = ?1 AND user_id = ?2`)
+      .bind(objectId, userId, title.trim().slice(0, 120), nowIso())
+      .run();
+
+    await this.touch(objectId);
+  }
+
   /** Правка текста заметки на месте, без удаления и создания заново. */
   async updateNote(userId: number, noteId: string, text: string): Promise<string | null> {
     const note = await this.findById(userId, noteId);

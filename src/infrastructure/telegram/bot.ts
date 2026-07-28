@@ -870,9 +870,9 @@ export function createBot(
         if (arg) await showTagPicker(ctx, userId, arg, true);
         return;
 
-      // Средняя кнопка счётчика «2/3» — не кнопка, а подпись.
       case CB.noop:
         return;
+
 
       case CB.fields:
         await showFields(ctx, userId, 0, true);
@@ -1143,6 +1143,12 @@ export function createBot(
         return;
       }
 
+      case CB.renameAttachment:
+        if (!arg) return;
+        await app.state.set(userId, 'attachment:rename', { attachmentId: arg });
+        await ctx.reply('Новое название вложения?', ASK);
+        return;
+
       case CB.renameOption: {
         if (!arg) return;
         const dialog = await app.state.get(userId);
@@ -1347,7 +1353,11 @@ export function createBot(
       const attachTo = dialog.payload.attachTo;
       if (attachTo) {
         const attachmentId = await app.attachMedia(userId, attachTo, media);
-        if (speech) await app.setTranscript(attachmentId, speech);
+        if (speech) {
+          await app.setTranscript(attachmentId, speech);
+          // «Голосовое 1» ни о чём не говорит. Сказанное — говорит.
+          await app.entries.rename(userId, attachmentId, speech.slice(0, 60));
+        }
         await app.state.clear(userId);
         await showCard(ctx, userId, attachTo);
         return;
@@ -1531,6 +1541,17 @@ export function createBot(
           `Тип значения для «${esc(input)}»?\n\nОт типа зависит проверка ввода и сравнения в поиске.`,
           { ...HTML, reply_markup: typePicker() },
         );
+        return;
+      }
+
+      case 'attachment:rename': {
+        const attachmentId = dialog.payload.attachmentId;
+        if (!attachmentId) return;
+
+        await app.entries.rename(userId, attachmentId, input);
+        await app.search.flushDirty();
+        await app.state.clear(userId);
+        await showObject(ctx, userId, attachmentId);
         return;
       }
 
