@@ -16,7 +16,11 @@ export type DialogState =
   | 'property:value'
   | 'note:text'
   | 'tag:name'
-  | 'search:query';
+  | 'search:query'
+  | 'field:key'
+  | 'field:type'
+  | 'field:scope'
+  | 'field:options';
 
 export interface Dialog {
   state: DialogState;

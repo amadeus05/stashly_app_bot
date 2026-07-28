@@ -73,6 +73,55 @@ export function inferValue(raw: string): TypedValue {
   return { type: 'text', valueText: input, valueNum: null, valueDate: null };
 }
 
+/** Пример допустимого ввода — показываем его вместе с отказом. */
+const TYPE_HINT: Record<PropertyType, string> = {
+  number: '9 или 9.8',
+  date: '01.07.2026',
+  duration: '12:34 или 1:02:03',
+  bool: 'да или нет',
+  url: 'https://…',
+  text: 'любой текст',
+  select: 'любой текст',
+};
+
+export interface Coerced {
+  value: TypedValue | null;
+  /** Заполнено, если значение не подошло под объявленный тип. */
+  problem: string | null;
+}
+
+/**
+ * Приводит ввод к объявленному типу поля.
+ *
+ * Без этой проверки поле «Оценка» с текстом «девять» в одной записи
+ * молча выпало бы из фильтра «оценка>=9»: не ошибка, а неполная выдача —
+ * худший вид поломки, потому что выглядит как рабочий результат.
+ *
+ * Тип не задан — возвращаем угаданный, поведение как раньше.
+ */
+export function coerceValue(raw: string, expected: PropertyType | null): Coerced {
+  const guessed = inferValue(raw);
+  if (expected === null) return { value: guessed, problem: null };
+
+  // Текстовые типы принимают что угодно, включая цифры: «Серия: 12 из 24».
+  if (expected === 'text' || expected === 'select') {
+    return { value: { type: expected, valueText: raw.trim(), valueNum: null, valueDate: null }, problem: null };
+  }
+
+  if (guessed.type === expected) {
+    return { value: guessed, problem: null };
+  }
+
+  // Целое число распознаётся как число, но годится и для тайминга не
+  // всегда — остальные несовпадения считаем ошибкой ввода.
+  if (expected === 'url' && /^\S+\.\S+/.test(raw.trim())) {
+    const withScheme = `https://${raw.trim().replace(/^https?:\/\//, '')}`;
+    return { value: { type: 'url', valueText: withScheme, valueNum: null, valueDate: null }, problem: null };
+  }
+
+  return { value: null, problem: `Для этого поля нужно: ${TYPE_HINT[expected]}` };
+}
+
 /** Обратное преобразование — то, что видит пользователь в карточке. */
 export function formatValue(property: Property): string {
   switch (property.type) {

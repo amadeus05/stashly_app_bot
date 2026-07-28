@@ -35,10 +35,123 @@ export const CB = {
   keyPage: 'kp',
   collectionsPage: 'cp',
   noop: 'x',
+  fields: 'f',
+  fieldsPage: 'fp',
+  fieldsSort: 'fs',
+  fieldsFilter: 'ff',
+  fieldsFilterSet: 'fk',
+  field: 'fd',
+  fieldNew: 'fnw',
+  fieldType: 'ft',
+  fieldScope: 'fc',
+  fieldDelete: 'fx',
+  fieldAddOption: 'fo',
+  pickValue: 'pv',
+  valuePage: 'vp',
+  newValue: 'nv',
   deleteProperty: 'dp',
   deleteTag: 'dt',
   deleteNote: 'dn',
 } as const;
+
+/** Экран справочника: сортировка, фильтр, поля, листалка. */
+export function fieldsMenu(
+  defs: Array<{ id: string; key: string; collectionName: string | null; optionCount: number; target: string }>,
+  page: number,
+  sort: 'asc' | 'desc',
+  filterLabel: string,
+): InlineKeyboard {
+  const keyboard = new InlineKeyboard()
+    .text(sort === 'asc' ? '🔤 А→Я' : '🔤 Я→А', `${CB.fieldsSort}:${sort === 'asc' ? 'desc' : 'asc'}`)
+    .text(`🔎 ${filterLabel}`, CB.fieldsFilter)
+    .row();
+
+  const chunk = slice(defs, page);
+  for (const def of chunk.items) {
+    // Значок сразу говорит про область: общее поле или привязанное.
+    const scope = def.collectionName ? `📌 ${def.collectionName}` : '🌐';
+    const values = def.optionCount > 0 ? ` · ${def.optionCount} знач.` : '';
+    const where = def.target === 'attachment' ? ' · вложения' : '';
+    keyboard.text(`${scope} ${def.key}${values}${where}`.slice(0, 40), `${CB.field}:${def.id}`).row();
+  }
+
+  counterPager(keyboard, `${CB.fieldsPage}:`, chunk.page, chunk.pages);
+  return keyboard.text('➕ Новое поле', CB.fieldNew).row().text('⬅️ Меню', CB.menu);
+}
+
+export function fieldFilterMenu(collections: Array<{ id: string; name: string; icon: string | null }>): InlineKeyboard {
+  const keyboard = new InlineKeyboard()
+    .text('Все поля', `${CB.fieldsFilterSet}:all`)
+    .row()
+    .text('🌐 Только общие', `${CB.fieldsFilterSet}:global`)
+    .row();
+
+  for (const collection of collections) {
+    keyboard.text(`${collection.icon ?? '📁'} ${collection.name}`, `${CB.fieldsFilterSet}:${collection.id}`).row();
+  }
+
+  return keyboard.text('⬅️ Назад', CB.fields);
+}
+
+export function fieldCard(defId: string): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('➕ Значения', `${CB.fieldAddOption}:${defId}`)
+    .row()
+    .text('🗑 Удалить поле', `${CB.fieldDelete}:${defId}`)
+    .row()
+    .text('⬅️ К полям', CB.fields);
+}
+
+/** Тип задаётся один раз и включает проверку ввода. */
+export function typePicker(): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('Определить автоматически', `${CB.fieldType}:auto`)
+    .row()
+    .text('Текст', `${CB.fieldType}:text`)
+    .text('Число', `${CB.fieldType}:number`)
+    .row()
+    .text('Дата', `${CB.fieldType}:date`)
+    .text('Да-нет', `${CB.fieldType}:bool`)
+    .row()
+    .text('Тайминг', `${CB.fieldType}:duration`)
+    .text('Ссылка', `${CB.fieldType}:url`)
+    .row()
+    .text('✖️ Отмена', CB.fields);
+}
+
+export function scopePicker(
+  collections: Array<{ id: string; name: string; icon: string | null }>,
+): InlineKeyboard {
+  const keyboard = new InlineKeyboard().text('🌐 Везде', `${CB.fieldScope}:global`).row();
+
+  for (const collection of collections) {
+    keyboard.text(`📌 ${collection.icon ?? '📁'} ${collection.name}`, `${CB.fieldScope}:${collection.id}`).row();
+  }
+
+  return keyboard.text('✖️ Отмена', CB.fields);
+}
+
+/** Готовые значения поля вместо ручного ввода. */
+export function valuePicker(
+  options: Array<{ id: string; value: string }>,
+  backTo: string,
+  isAttachment: boolean,
+  page = 0,
+): InlineKeyboard {
+  const keyboard = new InlineKeyboard();
+  const chunk = slice(options, page);
+
+  chunk.items.forEach((option, index) => {
+    keyboard.text(option.value.slice(0, 30), `${CB.pickValue}:${chunk.page * PICKER_PAGE + index}`);
+    if (index % 2 === 1) keyboard.row();
+  });
+  if (chunk.items.length % 2 === 1) keyboard.row();
+
+  counterPager(keyboard, `${CB.valuePage}:`, chunk.page, chunk.pages);
+
+  const back = isAttachment ? `${CB.attachment}:${backTo}` : `${CB.entry}:${backTo}`;
+  return keyboard.text('✏️ Своё значение', CB.newValue).row().text('⬅️ Назад', back);
+}
 
 /**
  * Выбор тегов из уже заведённых.
@@ -196,7 +309,8 @@ export function mainMenu(entryCount: number, collectionCount: number): InlineKey
     .text(`📁 Разделы (${collectionCount})`, CB.collections)
     .text(`🕘 Недавние (${entryCount})`, `${CB.recent}:0`)
     .row()
-    .text('🔍 Поиск', CB.search);
+    .text('🔍 Поиск', CB.search)
+    .text('🔧 Поля', CB.fields);
 }
 
 export function collectionsMenu(

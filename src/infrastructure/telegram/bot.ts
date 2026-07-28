@@ -9,6 +9,12 @@ import {
   cancelOnly,
   cardMenu,
   collectionPicker,
+  fieldCard,
+  fieldFilterMenu,
+  fieldsMenu,
+  scopePicker,
+  typePicker,
+  valuePicker,
   keyPicker,
   manageMenu,
   tagPicker,
@@ -21,6 +27,12 @@ import {
 import { extractMedia, titleForMedia } from './media.js';
 import { esc, header, renderAttachment, renderCard, renderHits, renderList } from './render.js';
 import { formatValue } from '../../domain/property.js';
+import type { PropertyType } from '../../domain/types.js';
+
+const TYPE_NAMES: Record<PropertyType, string> = {
+  text: 'текст', number: 'число', date: 'дата', bool: 'да-нет',
+  url: 'ссылка', select: 'список', duration: 'тайминг',
+};
 
 const HTML = { parse_mode: 'HTML' } as const;
 
@@ -257,6 +269,92 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
     );
   }
 
+  /**
+   * Спрашивает значение поля.
+   *
+   * У поля со списком показываем кнопки, иначе просим ввести. Тип поля
+   * везём в состоянии, чтобы проверить ввод и не молчать при промахе.
+   */
+  async function askValue(
+    ctx: Context,
+    userId: number,
+    objectId: string,
+    key: string,
+    defId: string | null,
+    page = 0,
+  ): Promise<void> {
+    const object = await app.entries.findById(userId, objectId);
+    const options = defId ? await app.fields.options(defId) : [];
+
+    if (options.length > 0) {
+      await app.state.set(userId, 'idle', {
+        objectId,
+        key,
+        defId: defId ?? '',
+        values: JSON.stringify(options.map((option) => option.value)),
+      });
+
+      await screen(
+        ctx,
+        header(key) + '\nВыберите значение или введите своё.',
+        valuePicker(options, objectId, object?.type === 'attachment', page),
+        true,
+      );
+      return;
+    }
+
+    await app.state.set(userId, 'property:value', { objectId, key, defId: defId ?? '' });
+    await ctx.reply(`Значение для «${esc(key)}»?`, ASK);
+  }
+
+  /** Справочник полей: сортировка, фильтр и листалка запоминаются. */
+  async function showFields(ctx: Context, userId: number, page: number, edit: boolean): Promise<void> {
+    const prefs = await app.fields.preferences(userId);
+    const [defs, collections] = await Promise.all([
+      app.fields.list(userId, prefs.filter, prefs.sort),
+      app.collections.list(userId),
+    ]);
+
+    const label =
+      prefs.filter === null
+        ? 'Все'
+        : prefs.filter === 'global'
+          ? 'Общие'
+          : (collections.find((collection) => collection.id === prefs.filter)?.name ?? 'Все');
+
+    const text =
+      defs.length === 0
+        ? header('Поля') + '\nСправочник пуст. Заведите поле — и его не придётся вводить каждый раз.'
+        : header('Поля') + '\n🌐 общие · 📌 привязанные к разделу';
+
+    await screen(ctx, text, fieldsMenu(defs, page, prefs.sort, label), edit);
+  }
+
+  /** Карточка поля: тип, область и готовые значения. */
+  async function showField(ctx: Context, userId: number, defId: string, edit: boolean): Promise<void> {
+    const def = await app.fields.find(userId, defId);
+    if (!def) {
+      await ctx.reply('Поле не найдено.');
+      return;
+    }
+
+    const options = await app.fields.options(defId);
+    const lines = [
+      header(def.key),
+      `├ <i>тип: ${def.type ? TYPE_NAMES[def.type] : 'определится сам'}</i>`,
+      `├ <i>доступно: ${def.collectionName ? `📌 ${esc(def.collectionName)}` : '🌐 везде'}</i>`,
+      `└ <i>для: ${def.target === 'attachment' ? 'вложений' : def.target === 'any' ? 'всего' : 'записей'}</i>`,
+    ];
+
+    if (options.length > 0) {
+      lines.push('', '<b>Значения</b>', options.map((option) => esc(option.value)).join(' · '));
+    } else {
+      lines.push('', '<i>Значений нет — вводятся вручную.</i>');
+    }
+
+    await screen(ctx, lines.join('\n'), fieldCard(defId), edit);
+  }
+
   /** Экран выбора названия поля из уже использованных. */
   async function showKeyPicker(
     ctx: Context,
@@ -269,7 +367,16 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
     if (!object) return;
 
     const collectionId = await app.entries.collectionIdOf(objectId);
-    const keys = await app.entries.suggestKeys(userId, object.type, collectionId, SUGGEST_LIMIT);
+    const [history, defs] = await Promise.all([
+      app.entries.suggestKeys(userId, object.type, collectionId, SUGGEST_LIMIT),
+      app.fieldsFor(userId, objectId, object.type),
+    ]);
+
+    // Справочник идёт первым, история — следом и без повторов: поле,
+    // заведённое осознанно, важнее случайно совпавшего из прошлого.
+    const fromDict = defs.map((def) => `${def.collectionId ? '📌' : '🌐'} ${def.key}`);
+    const taken = new Set(defs.map((def) => def.key.toLowerCase()));
+    const keys = [...fromDict, ...history.filter((key) => !taken.has(key.toLowerCase()))];
 
     if (keys.length === 0) {
       await app.state.set(userId, 'property:key', { objectId });
@@ -280,8 +387,19 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
       return;
     }
 
+    // Рядом с подписями храним, что за ними стоит: у поля справочника
+    // есть тип и готовые значения, у подсказки из истории — только имя.
+    const picks = [
+      ...defs.map((def) => ({ key: def.key, defId: def.id })),
+      ...history.filter((key) => !taken.has(key.toLowerCase())).map((key) => ({ key, defId: null })),
+    ];
+
     // Список кладём в состояние: в callback_data влезает только индекс.
-    await app.state.set(userId, 'idle', { target: objectId, keys: JSON.stringify(keys) });
+    await app.state.set(userId, 'idle', {
+      target: objectId,
+      keys: JSON.stringify(keys),
+      picks: JSON.stringify(picks),
+    });
 
     await screen(
       ctx,
@@ -653,6 +771,89 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
       case CB.noop:
         return;
 
+      case CB.fields:
+        await showFields(ctx, userId, 0, true);
+        return;
+
+      case CB.fieldsPage:
+        await showFields(ctx, userId, Number(arg ?? '0'), true);
+        return;
+
+      case CB.fieldsSort: {
+        const prefs = await app.fields.preferences(userId);
+        await app.fields.setPreferences(userId, arg === 'desc' ? 'desc' : 'asc', prefs.filter);
+        await showFields(ctx, userId, 0, true);
+        return;
+      }
+
+      case CB.fieldsFilter: {
+        const collections = await app.collections.list(userId);
+        await screen(ctx, header('Показывать'), fieldFilterMenu(collections), true);
+        return;
+      }
+
+      case CB.fieldsFilterSet: {
+        const prefs = await app.fields.preferences(userId);
+        await app.fields.setPreferences(userId, prefs.sort, arg === 'all' ? null : (arg ?? null));
+        await showFields(ctx, userId, 0, true);
+        return;
+      }
+
+      case CB.field:
+        if (arg) await showField(ctx, userId, arg, true);
+        return;
+
+      case CB.fieldNew:
+        await app.state.set(userId, 'field:key');
+        await ctx.reply('Название поля?\n\nНапример: <code>Статус</code>', ASK);
+        return;
+
+      case CB.fieldType: {
+        const dialog = await app.state.get(userId);
+        if (!dialog.payload.key) return;
+
+        const collections = await app.collections.list(userId);
+        await app.state.set(userId, 'field:scope', {
+          ...dialog.payload,
+          type: arg === 'auto' ? '' : (arg ?? ''),
+        });
+        await screen(ctx, header('Где доступно') + '\nВезде или только в одном разделе.', scopePicker(collections), true);
+        return;
+      }
+
+      case CB.fieldScope: {
+        const dialog = await app.state.get(userId);
+        const key = dialog.payload.key;
+        if (!key) return;
+
+        const defId = await app.fields.create(
+          userId,
+          key,
+          (dialog.payload.type || null) as PropertyType | null,
+          arg === 'global' ? null : (arg ?? null),
+          'entry',
+        );
+
+        await app.state.set(userId, 'field:options', { defId });
+        await ctx.reply(
+          'Значения списком, через запятую?\n\nНапример: <code>смотрю, досмотрено, брошено</code>\n\nИли пропустите — тогда значение вводится вручную.',
+          { ...HTML, reply_markup: new InlineKeyboard().text('Пропустить', `${CB.field}:${defId}`) },
+        );
+        return;
+      }
+
+      case CB.fieldAddOption:
+        if (!arg) return;
+        await app.state.set(userId, 'field:options', { defId: arg });
+        await ctx.reply('Значения через запятую?', ASK);
+        return;
+
+      case CB.fieldDelete:
+        if (!arg) return;
+        await app.fields.delete(userId, arg);
+        await showFields(ctx, userId, 0, true);
+        return;
+
       case CB.collectionsPage: {
         const collections = await app.collections.list(userId);
         await screen(ctx, header('Разделы'), collectionsMenu(collections, Number(arg ?? '0')), true);
@@ -716,20 +917,68 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
           return;
         }
 
-        let keys: string[] = [];
+        let picks: Array<{ key: string; defId: string | null }> = [];
         try {
-          keys = JSON.parse(dialog.payload.keys) as string[];
+          picks = JSON.parse(dialog.payload.picks ?? '[]') as typeof picks;
         } catch {
-          keys = [];
+          picks = [];
         }
 
-        const key = keys[Number(arg ?? '-1')];
-        if (!key) {
+        const pick = picks[Number(arg ?? '-1')];
+        if (!pick) {
           await ctx.reply('Поле не найдено — попробуйте ещё раз.');
           return;
         }
 
-        await app.state.set(userId, 'property:value', { objectId, key });
+        await askValue(ctx, userId, objectId, pick.key, pick.defId);
+        return;
+      }
+
+      case CB.valuePage: {
+        const dialog = await app.state.get(userId);
+        if (!dialog.payload.objectId || !dialog.payload.key) return;
+        await askValue(
+          ctx,
+          userId,
+          dialog.payload.objectId,
+          dialog.payload.key,
+          dialog.payload.defId ?? null,
+          Number(arg ?? '0'),
+        );
+        return;
+      }
+
+      case CB.pickValue: {
+        const dialog = await app.state.get(userId);
+        const { objectId, key } = dialog.payload;
+        if (!objectId || !key) return;
+
+        let values: string[] = [];
+        try {
+          values = JSON.parse(dialog.payload.values ?? '[]') as string[];
+        } catch {
+          values = [];
+        }
+
+        const value = values[Number(arg ?? '-1')];
+        if (value === undefined) return;
+
+        await app.setValidatedProperty(userId, objectId, key, value, null);
+        await app.state.clear(userId);
+        await showObject(ctx, userId, objectId);
+        return;
+      }
+
+      case CB.newValue: {
+        const dialog = await app.state.get(userId);
+        const { objectId, key } = dialog.payload;
+        if (!objectId || !key) return;
+
+        await app.state.set(userId, 'property:value', {
+          objectId,
+          key,
+          defId: dialog.payload.defId ?? '',
+        });
         await ctx.reply(`Значение для «${esc(key)}»?`, ASK);
         return;
       }
@@ -876,7 +1125,17 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
           await ctx.reply('Мастер устарел — начните заново.');
           return;
         }
-        await app.setProperty(userId, objectId, key, input);
+        // Тип известен только у полей справочника — иначе как раньше,
+        // тип угадывается по значению.
+        const def = dialog.payload.defId ? await app.fields.find(userId, dialog.payload.defId) : null;
+        const problem = await app.setValidatedProperty(userId, objectId, key, input, def?.type ?? null);
+
+        if (problem) {
+          // Состояние не трогаем: человек вводит заново, ничего не теряя.
+          await ctx.reply(`${problem}\n\nВведите значение ещё раз.`, ASK);
+          return;
+        }
+
         await app.state.clear(userId);
         await showObject(ctx, userId, objectId);
         return;
@@ -900,6 +1159,31 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
         await app.addNote(userId, objectId, input);
         await app.state.clear(userId);
         await showObject(ctx, userId, objectId);
+        return;
+      }
+
+      case 'field:key': {
+        const problem = NoteKeeper.validateName(input);
+        if (problem) {
+          await ctx.reply(`${problem}\n\nВведите название поля ещё раз.`, ASK);
+          return;
+        }
+
+        await app.state.set(userId, 'field:type', { key: input });
+        await ctx.reply(
+          `Тип значения для «${esc(input)}»?\n\nОт типа зависит проверка ввода и сравнения в поиске.`,
+          { ...HTML, reply_markup: typePicker() },
+        );
+        return;
+      }
+
+      case 'field:options': {
+        const defId = dialog.payload.defId;
+        if (!defId) return;
+
+        await app.fields.addOptions(defId, input.split(',').map((value) => value.trim()));
+        await app.state.clear(userId);
+        await showField(ctx, userId, defId, false);
         return;
       }
 

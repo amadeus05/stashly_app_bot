@@ -7,7 +7,8 @@ HERE = Path(__file__).resolve().parent
 
 data = json.load(open(HERE / 'captured.json', encoding='utf-8'))
 c = sqlite3.connect(':memory:')
-c.executescript(open(HERE.parent / 'migrations' / '0001_init.sql', encoding='utf-8').read())
+for migration in sorted((HERE.parent / 'migrations').glob('*.sql')):
+    c.executescript(open(migration, encoding='utf-8').read())
 c.execute('PRAGMA foreign_keys=ON')
 
 def to_sqlite(sql):

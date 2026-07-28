@@ -154,6 +154,23 @@ check('64 символа проходят', NoteKeeper.validateName('я'.repeat(
 
 // Индекс поля передаётся в callback_data. Если он считается от начала
 // страницы, а не всего списка, на второй странице выберется чужое поле.
+// Без проверки типа поле «Оценка» с текстом «девять» молча выпало бы
+// из фильтра «оценка>=9» — неполная выдача вместо ошибки.
+console.log('\nпроверка значения по типу поля:');
+const { coerceValue } = await import('../.test-build/domain/property.js');
+
+check('число принимает число', coerceValue('9.8', 'number').value.valueNum, 9.8);
+check('число отвергает текст', coerceValue('девять', 'number').problem !== null, true);
+check('в отказе есть пример', coerceValue('девять', 'number').problem.includes('9'), true);
+check('дата принимает 01.07.2026', coerceValue('01.07.2026', 'date').value.valueDate, '2026-07-01T00:00:00.000Z');
+check('дата отвергает мусор', coerceValue('вчера', 'date').problem !== null, true);
+check('тайминг принимает 12:34', coerceValue('12:34', 'duration').value.valueNum, 754);
+check('да-нет принимает «нет»', coerceValue('нет', 'bool').value.valueNum, 0);
+check('текст принимает цифры как текст', coerceValue('12 из 24', 'text').value.type, 'text');
+check('текстовое поле не станет числом', coerceValue('9', 'text').value.type, 'text');
+check('ссылке дописывается схема', coerceValue('example.com/a', 'url').value.valueText, 'https://example.com/a');
+check('без объявленного типа — как раньше', coerceValue('9,8', null).value.type, 'number');
+
 console.log('\nпагинация списков выбора:');
 const { keyPicker, tagPicker, PICKER_PAGE } = await import('../.test-build/infrastructure/telegram/keyboards.js');
 const many = Array.from({ length: 20 }, (_, i) => `Поле${i}`);

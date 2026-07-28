@@ -1,9 +1,10 @@
-import { inferValue } from '../domain/property.js';
+import { coerceValue, inferValue } from '../domain/property.js';
 import { parseQuery } from '../domain/query.js';
-import type { Collection, EntryCard, SearchHit, StoredObject } from '../domain/types.js';
+import type { Collection, EntryCard, PropertyType, SearchHit, StoredObject } from '../domain/types.js';
 import { CollectionRepository } from '../infrastructure/d1/collections.js';
 import type { NewMedia } from '../infrastructure/d1/entries.js';
 import { EntryRepository } from '../infrastructure/d1/entries.js';
+import { FieldRepository } from '../infrastructure/d1/fields.js';
 import { SearchRepository } from '../infrastructure/d1/search.js';
 import { StateRepository } from '../infrastructure/d1/state.js';
 import { UserRepository } from '../infrastructure/d1/users.js';
@@ -38,6 +39,7 @@ export class NoteKeeper {
   readonly entries: EntryRepository;
   readonly search: SearchRepository;
   readonly state: StateRepository;
+  readonly fields: FieldRepository;
 
   constructor(db: D1Database) {
     this.users = new UserRepository(db);
@@ -45,6 +47,44 @@ export class NoteKeeper {
     this.entries = new EntryRepository(db);
     this.search = new SearchRepository(db);
     this.state = new StateRepository(db);
+    this.fields = new FieldRepository(db);
+  }
+
+  /**
+   * Записывает значение с проверкой по объявленному типу поля.
+   *
+   * Возвращает текст проблемы, если значение не подошло — вызывающий
+   * покажет его и оставит мастер открытым, а не потеряет ввод.
+   */
+  async setValidatedProperty(
+    userId: number,
+    objectId: string,
+    key: string,
+    rawValue: string,
+    expected: PropertyType | null,
+  ): Promise<string | null> {
+    const { value, problem } = coerceValue(rawValue, expected);
+    if (!value) return problem;
+
+    await this.entries.setProperty(userId, objectId, key, value);
+    await this.search.flushDirty();
+    return null;
+  }
+
+  /** Поля справочника, применимые к объекту, с учётом его разделов. */
+  async fieldsFor(userId: number, objectId: string, type: 'entry' | 'attachment' | 'note') {
+    if (type === 'note') return [];
+
+    const collections = await this.collections.listForObject(objectId);
+    const ids = collections.map((collection) => collection.id);
+
+    // У вложения своих разделов нет — берём разделы родительской записи.
+    if (ids.length === 0) {
+      const parentId = await this.entries.collectionIdOf(objectId);
+      if (parentId) ids.push(parentId);
+    }
+
+    return this.fields.forObject(userId, type, ids);
   }
 
   async createCollection(userId: number, name: string, icon: string | null): Promise<Collection> {
