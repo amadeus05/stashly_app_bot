@@ -137,6 +137,31 @@ check('слово целиком, не начало', stripCommandPrefix('Най
 check('одинокое «найди» не пустеет', stripCommandPrefix('найди'), 'найди');
 check('обычная фраза не тронута', stripCommandPrefix('лучшая битва'), 'лучшая битва');
 
+// Модель возвращает лишние поля, строку вместо числа, выдуманный
+// оператор. Проверяем не модель, а то, что мы делаем с её ответом.
+console.log('\nразбор ответа модели:');
+const { toParsedQuery } = await import('../.test-build/ai/intent.js');
+
+check('оценка больше равно 4',
+  toParsedQuery({ intent: 'search', text: '', properties: [{ key: 'Оценка', op: '>=', value: '4' }] }).query.properties,
+  [{ key: 'оценка', op: '>=', num: 4 }]);
+check('намерение распознано',
+  toParsedQuery({ intent: 'search', text: 'ваня' }).intent, 'search');
+check('пустой разбор — unknown',
+  toParsedQuery({ intent: 'search', text: '' }).intent, 'unknown');
+check('мусор вместо объекта не роняет', toParsedQuery(null).intent, 'unknown');
+check('выдуманный оператор отброшен',
+  toParsedQuery({ intent: 'search', text: 'x', properties: [{ key: 'a', op: '≈', value: 1 }] }).query.properties, []);
+check('нечисло в сравнении отброшено',
+  toParsedQuery({ intent: 'search', text: 'x', properties: [{ key: 'a', op: '>', value: 'хорошо' }] }).query.properties, []);
+check('равенство принимает текст',
+  toParsedQuery({ intent: 'search', properties: [{ key: 'Озвучка', op: '=', value: 'AniStar' }] }).query.properties,
+  [{ key: 'озвучка', op: '=', text: 'AniStar' }]);
+check('неизвестный has отброшен',
+  toParsedQuery({ intent: 'search', text: 'x', has: ['фото', 'image'] }).query.has, ['image']);
+check('теги приводятся к нижнему регистру',
+  toParsedQuery({ intent: 'search', tags: ['Любимое'] }).query.tags, ['любимое']);
+
 console.log('\nтипы значений:');
 check('9,8 -> number', inferValue('9,8'), { type: 'number', valueText: null, valueNum: 9.8, valueDate: null });
 check('12:34 -> duration 754с', inferValue('12:34').valueNum, 754);

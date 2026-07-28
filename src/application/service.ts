@@ -1,4 +1,5 @@
 import { coerceValue, inferValue } from '../domain/property.js';
+import type { ParsedQuery } from '../domain/query.js';
 import { parseQuery } from '../domain/query.js';
 import type { Collection, EntryCard, PropertyType, SearchHit, StoredObject } from '../domain/types.js';
 import { CollectionRepository } from '../infrastructure/d1/collections.js';
@@ -179,8 +180,28 @@ export class NoteKeeper {
   }
 
   async find(userId: number, rawQuery: string, page = 0): Promise<Page<SearchHit>> {
-    const hits = await this.search.search(userId, parseQuery(rawQuery), PAGE_SIZE + 1, page * PAGE_SIZE);
+    return this.findParsed(userId, parseQuery(rawQuery), page);
+  }
+
+  /** Тот же поиск, но по готовой структуре — её собирает разбор речи. */
+  async findParsed(userId: number, query: ParsedQuery, page = 0): Promise<Page<SearchHit>> {
+    const hits = await this.search.search(userId, query, PAGE_SIZE + 1, page * PAGE_SIZE);
     return paginate(hits, page);
+  }
+
+  /** Что подставить модели в промпт: только то, что у пользователя есть. */
+  async intentContext(userId: number): Promise<{ collections: string[]; tags: string[]; keys: string[] }> {
+    const [collections, tags, keys] = await Promise.all([
+      this.collections.list(userId),
+      this.tagBook.list(userId, null, 'asc'),
+      this.entries.suggestKeys(userId, 'entry', null, 40),
+    ]);
+
+    return {
+      collections: collections.map((item) => item.name),
+      tags: tags.map((item) => item.name),
+      keys,
+    };
   }
 
   async card(userId: number, entryId: string): Promise<EntryCard | null> {

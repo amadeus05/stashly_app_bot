@@ -1,4 +1,5 @@
 import type { Page } from '../../application/service.js';
+import type { ParsedQuery } from '../../domain/query.js';
 import { formatValue } from '../../domain/property.js';
 import type { EntryCard, MediaType, Property, SearchHit, StoredObject } from '../../domain/types.js';
 
@@ -236,4 +237,25 @@ export function renderList(page: Page<StoredObject>, title: string): string {
   // Перечислять записи текстом незачем: они прямо под этим на кнопках.
   if (page.items.length === 0) return `${header(title)}\n\nПусто.`;
   return header(title) + pageLabel(page);
+}
+
+/**
+ * Как бот понял сказанное.
+ *
+ * Без этого пустая выдача необъяснима: непонятно, ослышалась модель или
+ * записей действительно нет.
+ */
+export function describeQuery(query: ParsedQuery, fallback: string): string {
+  const parts: string[] = [];
+
+  if (query.text) parts.push(query.text);
+  for (const collection of query.collections) parts.push(`раздел:${collection}`);
+  for (const tag of query.tags) parts.push(`tag:${tag}`);
+  for (const property of query.properties) {
+    const value = property.op === '=' ? (property.text ?? '') : property.num;
+    parts.push(`${property.key}${property.op === '=' ? ':' : property.op}${value}`);
+  }
+  for (const media of query.has) parts.push(`has:${media}`);
+
+  return parts.length > 0 ? parts.join(' ') : fallback;
 }

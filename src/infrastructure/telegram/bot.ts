@@ -32,9 +32,10 @@ import {
   saveOffer,
 } from './keyboards.js';
 import { stripCommandPrefix } from '../../domain/query.js';
+import { parseIntent } from '../../ai/intent.js';
 import { transcribe } from '../../ai/transcribe.js';
 import { extractMedia, titleForMedia } from './media.js';
-import { esc, header, renderAttachment, renderCard, renderHits, renderList } from './render.js';
+import { describeQuery, esc, header, renderAttachment, renderCard, renderHits, renderList } from './render.js';
 import { formatValue } from '../../domain/property.js';
 import type { PropertyType } from '../../domain/types.js';
 
@@ -1367,8 +1368,20 @@ export function createBot(
        * не делась.
        */
       if (speech) {
+        /**
+         * Сначала пробуем понять сказанное моделью: «оценка больше равно
+         * четыре» превращается в настоящий фильтр, чего никаким разбором
+         * строки не добиться. Не вышло — откатываемся на поиск по словам,
+         * то есть на прежнее поведение.
+         */
+        const context = await app.intentContext(userId);
+        const parsed = await parseIntent(groqToken, speech, context);
+
         const query = stripCommandPrefix(speech);
-        const hits = await app.find(userId, query);
+        const hits =
+          parsed?.intent === 'search'
+            ? await app.findParsed(userId, parsed.query)
+            : await app.find(userId, query);
         await app.state.set(userId, 'entry:collection', pending);
 
         const keyboard =
@@ -1376,7 +1389,8 @@ export function createBot(
             ? hitList(hits).row().text('💾 Сохранить голосовое', CB.savePending)
             : saveOffer();
 
-        await ctx.reply(renderHits(hits, query), { ...HTML, reply_markup: keyboard });
+        const shown = parsed?.intent === 'search' ? describeQuery(parsed.query, speech) : query;
+        await ctx.reply(renderHits(hits, shown), { ...HTML, reply_markup: keyboard });
         return;
       }
 
