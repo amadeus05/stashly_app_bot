@@ -401,10 +401,13 @@ export class EntryRepository {
    * Снимаем тег с объекта, но сам тег у пользователя оставляем:
    * он может висеть на других записях, и удалять его целиком нельзя.
    */
-  async removeTag(objectId: string, tagId: string): Promise<void> {
+  async removeTag(userId: number, objectId: string, tagId: string): Promise<void> {
     await this.db
-      .prepare(`DELETE FROM object_tags WHERE object_id = ?1 AND tag_id = ?2`)
-      .bind(objectId, tagId)
+      .prepare(
+        `DELETE FROM object_tags WHERE object_id = ?1 AND tag_id = ?2
+         AND EXISTS (SELECT 1 FROM objects WHERE id = ?1 AND user_id = ?3)`,
+      )
+      .bind(objectId, tagId, userId)
       .run();
 
     await this.touch(objectId);
@@ -424,16 +427,30 @@ export class EntryRepository {
     return results.map(toObject);
   }
 
-  async listByCollection(collectionId: string, limit: number, offset: number): Promise<StoredObject[]> {
+  /**
+   * Записи раздела.
+   *
+   * user_id обязателен: идентификатор раздела приходит из callback_data,
+   * то есть с клиента. Кнопки бот присылает свои, но прислать боту можно
+   * любые данные кнопки — проверка владельца не должна держаться на том,
+   * что чужой UUID не угадают.
+   */
+  async listByCollection(
+    userId: number,
+    collectionId: string,
+    limit: number,
+    offset: number,
+  ): Promise<StoredObject[]> {
     const { results } = await this.db
       .prepare(
         `SELECT o.* FROM objects o
          JOIN object_collections oc ON oc.object_id = o.id
-         WHERE oc.collection_id = ?1
+         JOIN collections c ON c.id = oc.collection_id AND c.user_id = ?1
+         WHERE oc.collection_id = ?2
          ORDER BY o.updated_at DESC
-         LIMIT ?2 OFFSET ?3`,
+         LIMIT ?3 OFFSET ?4`,
       )
-      .bind(collectionId, limit, offset)
+      .bind(userId, collectionId, limit, offset)
       .all<ObjectRow>();
 
     return results.map(toObject);

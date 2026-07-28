@@ -728,7 +728,7 @@ export function createBot(
           return;
         }
 
-        const page = await app.byCollection(arg, Number(extra ?? '0'));
+        const page = await app.byCollection(userId, arg, Number(extra ?? '0'));
         await screen(ctx, renderList(page, 'Раздел'), entryList(page, `${CB.collection}:${arg}:`, arg), true);
         return;
       }
@@ -736,7 +736,7 @@ export function createBot(
       case CB.deleteCollection: {
         if (!arg) return;
 
-        const count = await app.collections.countEntries(arg);
+        const count = await app.collections.countEntries(userId, arg);
         if (count > 0 && extra !== 'force') {
           // Не сносим чужие записи молча: сначала показываем цену решения.
           await screen(
@@ -830,7 +830,7 @@ export function createBot(
           await ctx.reply('Экран устарел — откройте запись заново.');
           return;
         }
-        await app.removeTag(objectId, arg);
+        await app.removeTag(userId, objectId, arg);
         await showManage(ctx, userId, objectId, true);
         return;
       }
@@ -883,7 +883,7 @@ export function createBot(
         const collection = await app.collections.find(userId, arg);
         if (!collection) return;
 
-        const count = await app.collections.countEntries(arg);
+        const count = await app.collections.countEntries(userId, arg);
         await screen(
           ctx,
           header(`${collection.icon ?? '📁'} ${collection.name}`) + `\n<i>записей: ${count}</i>`,
@@ -1196,7 +1196,7 @@ export function createBot(
         // Один тап ставит, второй снимает: отдельного «удалить» не нужно.
         const current = await app.entries.tagIdsOf(objectId);
         if (current.includes(arg)) {
-          await app.removeTag(objectId, arg);
+          await app.removeTag(userId, objectId, arg);
         } else {
           await app.attachTag(userId, objectId, arg);
         }
@@ -1563,7 +1563,7 @@ export function createBot(
         }
 
         await app.state.clear(userId);
-        const page = await app.byCollection(collectionId, 0);
+        const page = await app.byCollection(userId, collectionId, 0);
         await ctx.reply(renderList(page, 'Раздел переименован'), {
           ...HTML,
           reply_markup: entryList(page, `${CB.collection}:${collectionId}:`, collectionId),

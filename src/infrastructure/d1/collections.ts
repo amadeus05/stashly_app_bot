@@ -40,10 +40,14 @@ export class CollectionRepository {
   }
 
   /** Сколько записей потеряет коллекцию, если её удалить. */
-  async countEntries(collectionId: string): Promise<number> {
+  async countEntries(userId: number, collectionId: string): Promise<number> {
     const row = await this.db
-      .prepare(`SELECT COUNT(*) AS n FROM object_collections WHERE collection_id = ?1`)
-      .bind(collectionId)
+      .prepare(
+        `SELECT COUNT(*) AS n FROM object_collections oc
+         JOIN collections c ON c.id = oc.collection_id AND c.user_id = ?2
+         WHERE oc.collection_id = ?1`,
+      )
+      .bind(collectionId, userId)
       .first<{ n: number }>();
 
     return row?.n ?? 0;

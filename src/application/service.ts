@@ -139,8 +139,8 @@ export class NoteKeeper {
     await this.search.flushDirty();
   }
 
-  async removeTag(objectId: string, tagId: string): Promise<void> {
-    await this.entries.removeTag(objectId, tagId);
+  async removeTag(userId: number, objectId: string, tagId: string): Promise<void> {
+    await this.entries.removeTag(userId, objectId, tagId);
     await this.search.flushDirty();
   }
 
@@ -258,10 +258,10 @@ export class NoteKeeper {
     return { ...paginate(rows, page), pages: Math.max(1, Math.ceil(total / PAGE_SIZE)) };
   }
 
-  async byCollection(collectionId: string, page = 0): Promise<Page<StoredObject>> {
+  async byCollection(userId: number, collectionId: string, page = 0): Promise<Page<StoredObject>> {
     const [rows, total] = await Promise.all([
-      this.entries.listByCollection(collectionId, PAGE_SIZE + 1, page * PAGE_SIZE),
-      this.collections.countEntries(collectionId),
+      this.entries.listByCollection(userId, collectionId, PAGE_SIZE + 1, page * PAGE_SIZE),
+      this.collections.countEntries(userId, collectionId),
     ]);
 
     return { ...paginate(rows, page), pages: Math.max(1, Math.ceil(total / PAGE_SIZE)) };

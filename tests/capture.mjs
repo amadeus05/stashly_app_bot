@@ -97,7 +97,7 @@ await app.entries.attachTag(USER, entryId, 't1');
 // Запросы со страницами и сохранение присланного — только на синтаксис:
 // шим не возвращает строк, содержательные проверки ниже, на чистых функциях.
 await app.recent(USER, 3);
-await app.byCollection(collection.id, 2);
+await app.byCollection(USER, collection.id, 2);
 await app.saveIncoming(USER, collection.id, 'Из пересланного', {
   mediaType: 'voice', fileId: 'AwACx', fileUniqueId: 'AQADv', duration: 7,
 });
