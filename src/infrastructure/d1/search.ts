@@ -150,13 +150,21 @@ export class SearchRepository {
     for (const filter of query.properties) {
       const key = next(filter.key);
       if (filter.op === '=') {
+        // Число хранится как REAL, и CAST(5.0 AS TEXT) даёт '5.0' — со
+        // строкой '5' оно никогда не совпадёт. Поэтому числовое значение
+        // сравниваем числом, а не текстом.
+        const numeric = Number((filter.text ?? '').replace(',', '.'));
+        const byNumber = Number.isFinite(numeric) && (filter.text ?? '').trim() !== ''
+          ? `OR p.value_num = ${next(numeric)}`
+          : '';
+
         // Текстовое равенство — регистронезависимое: voice:anistar должен
         // находить "AniStar", иначе фильтром никто не воспользуется.
         conditions.push(`EXISTS (
           SELECT 1 FROM properties p JOIN objects d ON d.id = p.object_id
           WHERE ${DESCENDANT_OF('m.root_id')} AND p.key_norm = ${key}
             AND (LOWER(COALESCE(p.value_text, '')) = ${next((filter.text ?? '').toLowerCase())}
-                 OR CAST(p.value_num AS TEXT) = ${next(filter.text ?? '')}))`);
+                 ${byNumber}))`);
       } else {
         conditions.push(`EXISTS (
           SELECT 1 FROM properties p JOIN objects d ON d.id = p.object_id
