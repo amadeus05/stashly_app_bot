@@ -228,21 +228,31 @@ export function renderHits(
     );
   }
 
-  // Названия не перечисляем — они уже на кнопках. Оставляем только то,
-  // чего в кнопках нет: где именно совпало.
-  const elsewhere = page.items.filter((hit) => hit.matchedType !== 'entry');
   const lines = [header(`Найдено: ${query}`)];
 
-  if (elsewhere.length > 0) {
-    lines.push('');
-    for (const hit of elsewhere) {
-      const icon = HIT_ICON[hit.matchedType] ?? '📄';
-      const where = hit.snippet ? esc(hit.snippet) : 'вложение';
-      lines.push(`${icon} <i>${esc(hit.entryTitle)} — ${where}</i>`);
+  // Показываем, ГДЕ совпало: из одной кнопки с названием непонятно,
+  // почему запись вообще оказалась в выдаче.
+  for (const hit of page.items) {
+    const found = sites?.get(hit.entryId) ?? [];
+
+    if (found.length === 0) {
+      // Совпало по названию — кнопка уже всё сказала, повторяться незачем.
+      if (hit.matchedType === 'entry') continue;
+
+      lines.push('', `📄 <b>${esc(hit.entryTitle)}</b>`);
+      if (hit.snippet) lines.push(`   ${HIT_ICON[hit.matchedType] ?? '·'} <i>${esc(hit.snippet)}</i>`);
+      continue;
+    }
+
+    lines.push('', `📄 <b>${esc(hit.entryTitle)}</b>`);
+    for (const site of found) {
+      const icon = SITE_ICON[site.kind] ?? '·';
+      const label = site.label ? `<b>${esc(site.label)}:</b> ` : '';
+      lines.push(`   ${icon} ${label}${esc(clamp(site.text, 90))}`);
     }
   }
 
-  return lines.join('\n') + pageLabel(page);
+  return joinWithin(lines, CARD_LIMIT) + pageLabel(page);
 }
 
 export function renderList(page: Page<StoredObject>, title: string): string {

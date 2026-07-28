@@ -139,6 +139,21 @@ check('слово целиком, не начало', stripCommandPrefix('Най
 check('одинокое «найди» не пустеет', stripCommandPrefix('найди'), 'найди');
 check('обычная фраза не тронута', stripCommandPrefix('лучшая битва'), 'лучшая битва');
 
+// Отрисовка выдачи: место совпадения должно реально попасть в текст.
+// Прошлый раз замена в исходнике прошла вхолостую, и старый вид остался.
+const { renderHits } = await import('../.test-build/infrastructure/telegram/render.js');
+const hit = { entryId: 'e1', entryTitle: 'Liza Evans', matchedObjectId: 'n1', matchedType: 'note', snippet: 'x' };
+const rendered = renderHits(
+  { items: [hit], page: 0, hasMore: false },
+  'оценка',
+  new Map([['e1', [{ kind: 'property', label: 'Оценка', text: '5', matched: true }]]]),
+);
+
+console.log('\nотрисовка выдачи:');
+check('поле попало в выдачу', rendered.includes('Оценка:</b> 5'), true);
+check('название записи показано', rendered.includes('Liza Evans'), true);
+check('старый формат ушёл', rendered.includes(' — '), false);
+
 // Модель возвращает лишние поля, строку вместо числа, выдуманный
 // оператор. Проверяем не модель, а то, что мы делаем с её ответом.
 // Где совпало: сопоставление в JS, потому что LOWER() в SQLite не
