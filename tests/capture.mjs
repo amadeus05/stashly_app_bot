@@ -141,6 +141,25 @@ check('обычная фраза не тронута', stripCommandPrefix('лу�
 
 // Модель возвращает лишние поля, строку вместо числа, выдуманный
 // оператор. Проверяем не модель, а то, что мы делаем с её ответом.
+// Где совпало: сопоставление в JS, потому что LOWER() в SQLite не
+// понимает кириллицу.
+console.log('\nместа совпадения:');
+const { findSites, termsOf } = await import('../.test-build/domain/highlight.js');
+const candidates = [
+  { kind: 'property', label: 'Оценка', text: '5' },
+  { kind: 'note', label: '', text: 'Оценка высший балл!' },
+  { kind: 'property', label: 'Озвучка', text: 'AniStar' },
+];
+
+check('термы отбираются', termsOf('оцен и я'), ['оцен']);
+check('находит поле по началу названия', findSites(['оцен'], candidates, 1).map((s) => s.label), ['Оценка']);
+check('поле и заметка вместе', findSites(['оцен'], candidates).map((s) => s.kind), ['property', 'note']);
+check('находит и заметку', findSites(['оцен'], candidates, 5).length, 2);
+check('регистр не мешает', findSites(['аnistar'.replace('а', 'a')], candidates)[0].text, 'AniStar');
+check('середина слова не считается', findSites(['ценка'], candidates).length, 0);
+check('лимит соблюдается', findSites(['оцен'], candidates, 1).length, 1);
+check('без термов — пусто', findSites([], candidates).length, 0);
+
 console.log('\nразбор ответа модели:');
 const { toParsedQuery } = await import('../.test-build/ai/intent.js');
 

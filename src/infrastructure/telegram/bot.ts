@@ -31,7 +31,7 @@ import {
   mainMenu,
   saveOffer,
 } from './keyboards.js';
-import { stripCommandPrefix } from '../../domain/query.js';
+import { parseQuery, stripCommandPrefix } from '../../domain/query.js';
 import { parseIntent } from '../../ai/intent.js';
 import { transcribe } from '../../ai/transcribe.js';
 import { extractMedia, titleForMedia } from './media.js';
@@ -520,7 +520,10 @@ export function createBot(
     const hits = await app.find(userId, query, page);
     await app.state.set(userId, 'idle', { lastQuery: query });
 
-    const text = renderHits(hits, query);
+    // Где именно совпало — иначе из одной кнопки непонятно, почему
+    // запись вообще в выдаче.
+    const sites = await app.sitesFor(userId, hits.items, parseQuery(query));
+    const text = renderHits(hits, query, sites);
     const keyboard = hits.items.length > 0 ? hitList(hits) : saveOffer();
 
     // Ничего не нашли — значит пользователь, скорее всего, хочет это
@@ -1390,7 +1393,8 @@ export function createBot(
             : saveOffer();
 
         const shown = parsed?.intent === 'search' ? describeQuery(parsed.query, speech) : query;
-        await ctx.reply(renderHits(hits, shown), { ...HTML, reply_markup: keyboard });
+        const sites = await app.sitesFor(userId, hits.items, parsed?.query ?? parseQuery(query));
+        await ctx.reply(renderHits(hits, shown, sites), { ...HTML, reply_markup: keyboard });
         return;
       }
 

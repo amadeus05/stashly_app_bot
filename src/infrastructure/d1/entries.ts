@@ -1,5 +1,6 @@
 import { newId, norm } from '../../core/id.js';
 import { nowIso } from '../../core/time.js';
+import { formatValue } from '../../domain/property.js';
 import type { TypedValue } from '../../domain/property.js';
 import type {
   Attachment,
@@ -277,6 +278,85 @@ export class EntryRepository {
       .run();
 
     await this.touch(objectId);
+  }
+
+  /**
+   * Содержимое записей для показа мест совпадения.
+   *
+   * Берём сразу для всей страницы выдачи — восемь записей, десятки строк.
+   * Отдельный запрос на каждую запись стоил бы восьми обращений к D1.
+   */
+  async contentsOf(
+    userId: number,
+    entryIds: string[],
+  ): Promise<Map<string, Array<{ kind: 'property' | 'note' | 'caption' | 'transcript'; label: string; text: string }>>> {
+    const result = new Map<string, Array<{ kind: 'property' | 'note' | 'caption' | 'transcript'; label: string; text: string }>>();
+    if (entryIds.length === 0) return result;
+
+    const holes = entryIds.map((_, index) => `?${index + 2}`).join(', ');
+    // Потомок принадлежит записи, если она сама, её ребёнок или внук.
+    const ROOT = `COALESCE(g.id, p.id, o.id)`;
+    const FROM = `
+      FROM objects o
+      LEFT JOIN objects p ON p.id = o.parent_id
+      LEFT JOIN objects g ON g.id = p.parent_id
+      WHERE o.user_id = ?1 AND ${ROOT} IN (${holes})`;
+
+    const [properties, notes, media] = await Promise.all([
+      this.db
+        .prepare(
+          `SELECT ${ROOT} AS root_id, pr.key AS label, pr.type AS type,
+                  pr.value_text, pr.value_num, pr.value_date
+           ${FROM.replace('FROM objects o', 'FROM properties pr JOIN objects o ON o.id = pr.object_id')}`,
+        )
+        .bind(userId, ...entryIds)
+        .all<{ root_id: string; label: string; type: Property['type']; value_text: string | null; value_num: number | null; value_date: string | null }>(),
+      this.db
+        .prepare(`SELECT ${ROOT} AS root_id, o.body AS text ${FROM} AND o.type = 'note' AND o.body IS NOT NULL`)
+        .bind(userId, ...entryIds)
+        .all<{ root_id: string; text: string }>(),
+      this.db
+        .prepare(
+          `SELECT ${ROOT} AS root_id, a.caption, a.transcript
+           ${FROM.replace('FROM objects o', 'FROM attachments a JOIN objects o ON o.id = a.object_id')}`,
+        )
+        .bind(userId, ...entryIds)
+        .all<{ root_id: string; caption: string | null; transcript: string | null }>(),
+    ]);
+
+    const push = (
+      root: string,
+      item: { kind: 'property' | 'note' | 'caption' | 'transcript'; label: string; text: string },
+    ) => {
+      const list = result.get(root) ?? [];
+      list.push(item);
+      result.set(root, list);
+    };
+
+    for (const row of properties.results) {
+      push(row.root_id, {
+        kind: 'property',
+        label: row.label,
+        text: formatValue({
+          id: '',
+          objectId: '',
+          key: row.label,
+          type: row.type,
+          valueText: row.value_text,
+          valueNum: row.value_num,
+          valueDate: row.value_date,
+        }),
+      });
+    }
+
+    for (const row of notes.results) push(row.root_id, { kind: 'note', label: '', text: row.text });
+
+    for (const row of media.results) {
+      if (row.caption) push(row.root_id, { kind: 'caption', label: '', text: row.caption });
+      if (row.transcript) push(row.root_id, { kind: 'transcript', label: '', text: row.transcript });
+    }
+
+    return result;
   }
 
   /** Свойство по id — чтобы открыть его на правку, зная только кнопку. */

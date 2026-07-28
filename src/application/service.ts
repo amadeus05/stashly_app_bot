@@ -1,4 +1,6 @@
 import { coerceValue, inferValue } from '../domain/property.js';
+import type { MatchSite } from '../domain/highlight.js';
+import { findSites, termsOf } from '../domain/highlight.js';
 import type { ParsedQuery } from '../domain/query.js';
 import { parseQuery } from '../domain/query.js';
 import type { Collection, EntryCard, PropertyType, SearchHit, StoredObject } from '../domain/types.js';
@@ -181,6 +183,36 @@ export class NoteKeeper {
 
   async find(userId: number, rawQuery: string, page = 0): Promise<Page<SearchHit>> {
     return this.findParsed(userId, parseQuery(rawQuery), page);
+  }
+
+  /**
+   * Дополняет выдачу местами совпадения.
+   *
+   * Один запрос на всю страницу: восемь записей, десятки строк. Само
+   * сопоставление — в домене, потому что LOWER() в SQLite не понимает
+   * кириллицу и сравнение без учёта регистра в SQL не работает.
+   */
+  async sitesFor(
+    userId: number,
+    hits: SearchHit[],
+    query: ParsedQuery,
+  ): Promise<Map<string, MatchSite[]>> {
+    const sites = new Map<string, MatchSite[]>();
+    const ids = [...new Set(hits.map((hit) => hit.entryId))];
+    if (ids.length === 0) return sites;
+
+    const contents = await this.entries.contentsOf(userId, ids);
+
+    // Слова запроса плюс имена полей из фильтров: «оценка>=9» тоже
+    // должна показать, какое поле прошло условие.
+    const terms = [...termsOf(query.text), ...query.properties.map((filter) => filter.key.toLowerCase())];
+
+    for (const id of ids) {
+      const found = findSites(terms, contents.get(id) ?? []);
+      if (found.length > 0) sites.set(id, found);
+    }
+
+    return sites;
   }
 
   /** Тот же поиск, но по готовой структуре — её собирает разбор речи. */

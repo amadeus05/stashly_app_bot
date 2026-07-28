@@ -1,4 +1,5 @@
 import type { Page } from '../../application/service.js';
+import type { MatchSite } from '../../domain/highlight.js';
 import type { ParsedQuery } from '../../domain/query.js';
 import { formatValue } from '../../domain/property.js';
 import type { EntryCard, MediaType, Property, SearchHit, StoredObject } from '../../domain/types.js';
@@ -208,7 +209,18 @@ function renderNote(note: StoredObject): string {
   return `💬 ${esc(body)}`;
 }
 
-export function renderHits(page: Page<SearchHit>, query: string): string {
+const SITE_ICON: Record<string, string> = {
+  property: '🔹',
+  note: '💬',
+  caption: '📎',
+  transcript: '🎤',
+};
+
+export function renderHits(
+  page: Page<SearchHit>,
+  query: string,
+  sites?: Map<string, MatchSite[]>,
+): string {
   if (page.items.length === 0) {
     return (
       `${header(`Ничего не нашлось: ${query}`)}\n\n` +
