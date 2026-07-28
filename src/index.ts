@@ -13,6 +13,8 @@ export interface Env {
   ADMIN_SECRET: string;
   /** JSON от getMe — избавляет от лишнего вызова Bot API на каждый апдейт. */
   BOT_INFO?: string;
+  /** Расшифровка голосовых. Без него бот работает, просто без неё. */
+  GROQ_API_TOKEN?: string;
 }
 
 function botInfoFrom(env: Env): UserFromGetMe | undefined {
@@ -82,7 +84,7 @@ export default {
       return new Response('forbidden', { status: 403 });
     }
 
-    const bot = createBot(env.BOT_TOKEN, env.DB, botInfoFrom(env));
+    const bot = createBot(env.BOT_TOKEN, env.DB, botInfoFrom(env), env.GROQ_API_TOKEN);
 
     try {
       return await webhookCallback(bot, 'cloudflare-mod')(request);

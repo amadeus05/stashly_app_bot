@@ -31,6 +31,7 @@ import {
   mainMenu,
   saveOffer,
 } from './keyboards.js';
+import { transcribe } from '../../ai/transcribe.js';
 import { extractMedia, titleForMedia } from './media.js';
 import { esc, header, renderAttachment, renderCard, renderHits, renderList } from './render.js';
 import { formatValue } from '../../domain/property.js';
@@ -46,7 +47,12 @@ const HTML = { parse_mode: 'HTML' } as const;
 /** Ответ на шаге, где бот ждёт ввода: всегда с видимой отменой. */
 const ASK = { parse_mode: 'HTML', reply_markup: cancelOnly() } as const;
 
-export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe): Bot {
+export function createBot(
+  token: string,
+  db: D1Database,
+  botInfo?: UserFromGetMe,
+  groqToken?: string,
+): Bot {
   // Без botInfo grammY делает getMe при каждом холодном старте — то есть
   // почти на каждый апдейт. Значение кладём в переменную BOT_INFO и
   // экономим один сетевой вызов на апдейт.
@@ -545,7 +551,7 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
       }
     }
 
-    const entryId = await app.saveIncoming(userId, collectionId, title, media);
+    const entryId = await app.saveIncoming(userId, collectionId, title, media, dialog.payload.speech);
     await app.state.clear(userId);
     await showCard(ctx, userId, entryId);
   }
@@ -1321,12 +1327,22 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
       const media = extractMedia(ctx.message);
       if (!media) return;
 
+      /**
+       * Расшифровка речи. Делаем до сохранения, чтобы текст попал в индекс
+       * сразу же, а не после второй правки. Отказ модели не должен мешать:
+       * при null вложение сохраняется как раньше, просто без текста.
+       */
+      const speech = ['voice', 'audio', 'video_note'].includes(media.mediaType)
+        ? await transcribe({ botToken: token, groqToken }, media.fileId)
+        : null;
+
       const dialog = await app.state.get(userId);
 
       // Сценарий «добавить медиа к открытой записи».
       const attachTo = dialog.payload.attachTo;
       if (attachTo) {
-        await app.attachMedia(userId, attachTo, media);
+        const attachmentId = await app.attachMedia(userId, attachTo, media);
+        if (speech) await app.setTranscript(attachmentId, speech);
         await app.state.clear(userId);
         await showCard(ctx, userId, attachTo);
         return;
@@ -1334,7 +1350,12 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
 
       // Основной сценарий: переслали боту что-то — сохраняем в два тапа.
       const collections = await app.collections.list(userId);
-      const pending = { title: titleForMedia(media), media: JSON.stringify(media) };
+      const pending = {
+        // Сказанное — лучшее название, чем «Голосовое от 26.07».
+        title: speech ? speech.slice(0, 120) : titleForMedia(media),
+        media: JSON.stringify(media),
+        speech: speech ?? '',
+      };
 
       if (collections.length === 0) {
         await app.state.set(userId, 'collection:name', pending);

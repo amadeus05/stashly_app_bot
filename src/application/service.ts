@@ -166,6 +166,12 @@ export class NoteKeeper {
     return id;
   }
 
+  /** Расшифровка речи — отдельным шагом: она приходит позже самого файла. */
+  async setTranscript(attachmentId: string, transcript: string): Promise<void> {
+    await this.entries.setTranscript(attachmentId, transcript);
+    await this.search.flushDirty();
+  }
+
   async attachMedia(userId: number, entryId: string, media: NewMedia): Promise<string> {
     const id = await this.entries.addAttachment(userId, entryId, media);
     await this.search.flushDirty();
@@ -210,10 +216,12 @@ export class NoteKeeper {
     collectionId: string,
     title: string,
     media: NewMedia | null,
+    transcript?: string,
   ): Promise<string> {
     const entryId = await this.entries.createEntry(userId, title, [collectionId]);
     if (media) {
-      await this.entries.addAttachment(userId, entryId, media);
+      const attachmentId = await this.entries.addAttachment(userId, entryId, media);
+      if (transcript) await this.entries.setTranscript(attachmentId, transcript);
     }
     await this.search.flushDirty();
     return entryId;

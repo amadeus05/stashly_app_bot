@@ -53,6 +53,8 @@ export interface Attachment {
   fileId: string;
   fileUniqueId: string;
   caption: string | null;
+  /** Расшифровка речи: есть только у голосовых, аудио и кружков. */
+  transcript?: string | null;
 }
 
 export interface Tag {

@@ -31,7 +31,12 @@ const MEDIA_LABEL: Record<MediaType, string> = {
 
 /** Подпись под открытым вложением: его собственные свойства и заметки. */
 export function renderAttachment(
-  detail: { object: StoredObject; attachment: { mediaType: MediaType }; properties: Property[]; notes: StoredObject[] },
+  detail: {
+    object: StoredObject;
+    attachment: { mediaType: MediaType; transcript?: string | null };
+    properties: Property[];
+    notes: StoredObject[];
+  },
   index: number,
 ): string {
   const icon = MEDIA_ICON[detail.attachment.mediaType];
@@ -52,7 +57,13 @@ export function renderAttachment(
     }
   }
 
-  if (detail.properties.length === 0 && detail.notes.length === 0) {
+  // Расшифровка бывает длинной — под кат, как и длинные заметки.
+  const transcript = detail.attachment.transcript?.trim();
+  if (transcript) {
+    lines.push('', `<blockquote expandable>${esc(clamp(transcript, NOTE_MAX))}</blockquote>`);
+  }
+
+  if (detail.properties.length === 0 && detail.notes.length === 0 && !transcript) {
     lines.push('', '<i>Нет полей. Добавьте, например, «Тайминг» или «Серия».</i>');
   }
 

@@ -45,7 +45,9 @@ SELECT
       FROM properties p WHERE p.object_id = o.id), '') || ' ' ||
     COALESCE((SELECT group_concat(t.name, ' ') FROM object_tags ot
       JOIN tags t ON t.id = ot.tag_id WHERE ot.object_id = o.id), '') || ' ' ||
-    COALESCE((SELECT a.caption FROM attachments a WHERE a.object_id = o.id), '')
+    COALESCE((SELECT a.caption FROM attachments a WHERE a.object_id = o.id), '') || ' ' ||
+    -- Расшифровка голосового: без неё голосовые заметки не искались вовсе.
+    COALESCE((SELECT a.transcript FROM attachments a WHERE a.object_id = o.id), '')
   ),
   o.id, o.user_id, o.type
 FROM objects o WHERE o.id = ?1`;

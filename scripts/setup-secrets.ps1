@@ -75,6 +75,12 @@ $secrets = [ordered]@{
     ADMIN_SECRET   = $values['ADMIN_SECRET']
 }
 
+# Ключ расшифровки голосовых. Не обязателен: без него бот работает
+# полностью, просто не расшифровывает речь.
+if ($values['GROQ_API_TOKEN']) {
+    $secrets['GROQ_API_TOKEN'] = $values['GROQ_API_TOKEN']
+}
+
 foreach ($name in $secrets.Keys) {
     Write-Host "Заливаю $name... " -NoNewline
 

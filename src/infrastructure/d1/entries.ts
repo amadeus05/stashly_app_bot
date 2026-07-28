@@ -39,6 +39,7 @@ interface AttachmentRow {
   file_id: string;
   file_unique_id: string;
   caption: string | null;
+  transcript: string | null;
 }
 
 const toObject = (row: ObjectRow): StoredObject => ({
@@ -223,6 +224,7 @@ export class EntryRepository {
         fileId: media.file_id,
         fileUniqueId: media.file_unique_id,
         caption: media.caption,
+        transcript: media.transcript,
       },
       properties: properties.results.map(toProperty),
       notes: notes.results.map(toObject),
@@ -265,6 +267,16 @@ export class EntryRepository {
       tags: tags.results,
       notes: notes.results.map(toObject),
     };
+  }
+
+  /** Расшифровка голосового: попадает в индекс тем же триггером, что и caption. */
+  async setTranscript(objectId: string, transcript: string): Promise<void> {
+    await this.db
+      .prepare(`UPDATE attachments SET transcript = ?2 WHERE object_id = ?1`)
+      .bind(objectId, transcript)
+      .run();
+
+    await this.touch(objectId);
   }
 
   /** Свойство по id — чтобы открыть его на правку, зная только кнопку. */
