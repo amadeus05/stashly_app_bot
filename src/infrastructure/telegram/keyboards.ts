@@ -53,6 +53,17 @@ export const CB = {
   optionsPage: 'op',
   deleteOption: 'dox',
   renameOption: 'ron',
+  tags: 'tgm',
+  tagsPage: 'tgp',
+  tagsSort: 'tgo',
+  tagsFilter: 'tgf',
+  tagsFilterSet: 'tgk',
+  tagCard: 'tgc',
+  tagNew: 'tgn',
+  tagRename: 'tgr',
+  tagRescope: 'tgs',
+  tagScope: 'tgz',
+  tagDelete: 'tgd',
   fieldRename: 'frn',
   fieldRetype: 'frt',
   fieldRescope: 'frs',
@@ -158,6 +169,63 @@ export function optionsMenu(
     .text('➕ Добавить', `${CB.fieldAddOption}:${defId}`)
     .row()
     .text('⬅️ К полю', `${CB.field}:${defId}`);
+}
+
+/** Справочник тегов — устроен как справочник полей. */
+export function tagsMenu(
+  tags: Array<{ id: string; name: string; collectionName: string | null; uses: number }>,
+  page: number,
+  sort: 'asc' | 'desc',
+  filterLabel: string,
+): InlineKeyboard {
+  const keyboard = new InlineKeyboard()
+    .text(sort === 'asc' ? '🔤 А→Я' : '🔤 Я→А', `${CB.tagsSort}:${sort === 'asc' ? 'desc' : 'asc'}`)
+    .text(`🔎 ${filterLabel}`, CB.tagsFilter)
+    .row();
+
+  const chunk = slice(tags, page);
+  for (const tag of chunk.items) {
+    const scope = tag.collectionName ? `📌 ${tag.collectionName}` : '🌐';
+    const uses = tag.uses > 0 ? ` · ${tag.uses}` : '';
+    keyboard.text(`${scope} ${tag.name}${uses}`.slice(0, 40), `${CB.tagCard}:${tag.id}`).row();
+  }
+
+  counterPager(keyboard, `${CB.tagsPage}:`, chunk.page, chunk.pages);
+  return keyboard.text('➕ Новый тег', CB.tagNew).row().text('⬅️ Меню', CB.menu);
+}
+
+export function tagsFilterMenu(collections: Array<{ id: string; name: string; icon: string | null }>): InlineKeyboard {
+  const keyboard = new InlineKeyboard()
+    .text('Все теги', `${CB.tagsFilterSet}:all`)
+    .row()
+    .text('🌐 Только общие', `${CB.tagsFilterSet}:global`)
+    .row();
+
+  for (const collection of collections) {
+    keyboard.text(`${collection.icon ?? '📁'} ${collection.name}`, `${CB.tagsFilterSet}:${collection.id}`).row();
+  }
+
+  return keyboard.text('⬅️ Назад', CB.tags);
+}
+
+export function tagCard(tagId: string): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('✏️ Имя', `${CB.tagRename}:${tagId}`)
+    .text('📌 Раздел', `${CB.tagRescope}:${tagId}`)
+    .row()
+    .text('🗑 Удалить тег', `${CB.tagDelete}:${tagId}`)
+    .row()
+    .text('⬅️ К тегам', CB.tags);
+}
+
+export function tagScopePicker(collections: Array<{ id: string; name: string; icon: string | null }>): InlineKeyboard {
+  const keyboard = new InlineKeyboard().text('🌐 Без раздела', `${CB.tagScope}:global`).row();
+
+  for (const collection of collections) {
+    keyboard.text(`📌 ${collection.icon ?? '📁'} ${collection.name}`, `${CB.tagScope}:${collection.id}`).row();
+  }
+
+  return keyboard.text('✖️ Отмена', CB.tags);
 }
 
 /** Тип задаётся один раз и включает проверку ввода. */
@@ -368,7 +436,9 @@ export function mainMenu(entryCount: number, collectionCount: number): InlineKey
     .text(`🕘 Недавние (${entryCount})`, `${CB.recent}:0`)
     .row()
     .text('🔍 Поиск', CB.search)
-    .text('🔧 Поля', CB.fields);
+    .row()
+    .text('🔧 Поля', CB.fields)
+    .text('🏷 Теги', CB.tags);
 }
 
 export function collectionsMenu(

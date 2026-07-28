@@ -7,6 +7,7 @@ import { EntryRepository } from '../infrastructure/d1/entries.js';
 import { FieldRepository } from '../infrastructure/d1/fields.js';
 import { SearchRepository } from '../infrastructure/d1/search.js';
 import { StateRepository } from '../infrastructure/d1/state.js';
+import { TagRepository } from '../infrastructure/d1/tags.js';
 import { UserRepository } from '../infrastructure/d1/users.js';
 
 export const PAGE_SIZE = 8;
@@ -40,6 +41,7 @@ export class NoteKeeper {
   readonly search: SearchRepository;
   readonly state: StateRepository;
   readonly fields: FieldRepository;
+  readonly tagBook: TagRepository;
 
   constructor(db: D1Database) {
     this.users = new UserRepository(db);
@@ -48,6 +50,7 @@ export class NoteKeeper {
     this.search = new SearchRepository(db);
     this.state = new StateRepository(db);
     this.fields = new FieldRepository(db);
+    this.tagBook = new TagRepository(db);
   }
 
   /**

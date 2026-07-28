@@ -13,6 +13,10 @@ import {
   fieldFilterMenu,
   optionsMenu,
   targetPicker,
+  tagCard,
+  tagScopePicker,
+  tagsFilterMenu,
+  tagsMenu,
   fieldsMenu,
   scopePicker,
   typePicker,
@@ -355,6 +359,49 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
     }
 
     await screen(ctx, lines.join('\n'), fieldCard(defId, options.length > 0), edit);
+  }
+
+  /** Справочник тегов: устроен как справочник полей. */
+  async function showTags(ctx: Context, userId: number, page: number, edit: boolean): Promise<void> {
+    const prefs = await app.tagBook.preferences(userId);
+    const [tags, collections] = await Promise.all([
+      app.tagBook.list(userId, prefs.filter, prefs.sort),
+      app.collections.list(userId),
+    ]);
+
+    const label =
+      prefs.filter === null
+        ? 'Все'
+        : prefs.filter === 'global'
+          ? 'Общие'
+          : (collections.find((collection) => collection.id === prefs.filter)?.name ?? 'Все');
+
+    const text =
+      tags.length === 0
+        ? header('Теги') + '\nТегов пока нет. Заведите — и они появятся в выборе у записей.'
+        : header('Теги') + '\n🌐 общие · 📌 привязанные к разделу · число — сколько записей';
+
+    await screen(ctx, text, tagsMenu(tags, page, prefs.sort, label), edit);
+  }
+
+  async function showTagCard(ctx: Context, userId: number, tagId: string, edit: boolean): Promise<void> {
+    const tag = await app.tagBook.find(userId, tagId);
+    if (!tag) {
+      await ctx.reply('Тег не найден.');
+      return;
+    }
+
+    const lines = [
+      header(`#${tag.name}`),
+      `├ <i>раздел: ${tag.collectionName ? `📌 ${esc(tag.collectionName)}` : '🌐 без раздела'}</i>`,
+      `└ <i>записей: ${tag.uses}</i>`,
+    ];
+
+    if (tag.uses > 0) {
+      lines.push('', `<i>Удаление снимет тег со всех ${tag.uses} записей.</i>`);
+    }
+
+    await screen(ctx, lines.join('\n'), tagCard(tagId), edit);
   }
 
   /** Правка списка значений: тап по значению удаляет его. */
@@ -792,6 +839,74 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
 
       case CB.fields:
         await showFields(ctx, userId, 0, true);
+        return;
+
+      case CB.tags:
+        await showTags(ctx, userId, 0, true);
+        return;
+
+      case CB.tagsPage:
+        await showTags(ctx, userId, Number(arg ?? '0'), true);
+        return;
+
+      case CB.tagsSort: {
+        const prefs = await app.tagBook.preferences(userId);
+        await app.tagBook.setPreferences(userId, arg === 'desc' ? 'desc' : 'asc', prefs.filter);
+        await showTags(ctx, userId, 0, true);
+        return;
+      }
+
+      case CB.tagsFilter: {
+        const collections = await app.collections.list(userId);
+        await screen(ctx, header('Показывать'), tagsFilterMenu(collections), true);
+        return;
+      }
+
+      case CB.tagsFilterSet: {
+        const prefs = await app.tagBook.preferences(userId);
+        await app.tagBook.setPreferences(userId, prefs.sort, arg === 'all' ? null : (arg ?? null));
+        await showTags(ctx, userId, 0, true);
+        return;
+      }
+
+      case CB.tagCard:
+        if (arg) await showTagCard(ctx, userId, arg, true);
+        return;
+
+      case CB.tagNew:
+        await app.state.set(userId, 'tag:new');
+        await ctx.reply('Название тега?', ASK);
+        return;
+
+      case CB.tagRename:
+        if (!arg) return;
+        await app.state.set(userId, 'tag:rename', { tagId: arg });
+        await ctx.reply('Новое название тега?', ASK);
+        return;
+
+      case CB.tagRescope: {
+        if (!arg) return;
+        const collections = await app.collections.list(userId);
+        await app.state.set(userId, 'idle', { tagId: arg });
+        await screen(ctx, header('Раздел тега') + '\nТолько для порядка в списке выбора.', tagScopePicker(collections), true);
+        return;
+      }
+
+      case CB.tagScope: {
+        const dialog = await app.state.get(userId);
+        const tagId = dialog.payload.tagId;
+        if (!tagId) return;
+
+        await app.tagBook.setScope(userId, tagId, arg === 'global' ? null : (arg ?? null));
+        await showTagCard(ctx, userId, tagId, true);
+        return;
+      }
+
+      case CB.tagDelete:
+        if (!arg) return;
+        await app.tagBook.delete(userId, arg);
+        await app.search.flushDirty();
+        await showTags(ctx, userId, 0, true);
         return;
 
       case CB.fieldsPage:
@@ -1299,6 +1414,42 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
           `Тип значения для «${esc(input)}»?\n\nОт типа зависит проверка ввода и сравнения в поиске.`,
           { ...HTML, reply_markup: typePicker() },
         );
+        return;
+      }
+
+      case 'tag:new': {
+        const problem = NoteKeeper.validateName(input);
+        if (problem) {
+          await ctx.reply(`${problem}\n\nВведите название тега ещё раз.`, ASK);
+          return;
+        }
+
+        const tagId = await app.tagBook.create(userId, input.replace(/^#/, ''), null);
+        await app.state.clear(userId);
+        await showTagCard(ctx, userId, tagId, false);
+        return;
+      }
+
+      case 'tag:rename': {
+        const tagId = dialog.payload.tagId;
+        if (!tagId) return;
+
+        const problem = NoteKeeper.validateName(input);
+        if (problem) {
+          await ctx.reply(`${problem}\n\nВведите название ещё раз.`, ASK);
+          return;
+        }
+
+        const conflict = await app.tagBook.rename(userId, tagId, input.replace(/^#/, ''));
+        if (conflict) {
+          await ctx.reply(`${conflict}\n\nВведите другое название.`, ASK);
+          return;
+        }
+
+        // Тег виден в индексе поиска — после переименования перестроим.
+        await app.search.flushDirty();
+        await app.state.clear(userId);
+        await showTagCard(ctx, userId, tagId, false);
         return;
       }
 

@@ -348,13 +348,14 @@ export class EntryRepository {
       .prepare(
         `SELECT t.id, t.name,
                 COUNT(ot.object_id) AS uses,
-                COALESCE(SUM(CASE WHEN oc.collection_id = ?2 THEN 1 ELSE 0 END), 0) AS here
+                COALESCE(SUM(CASE WHEN oc.collection_id = ?2 THEN 1 ELSE 0 END), 0) AS here,
+                CASE WHEN t.collection_id = ?2 THEN 1 ELSE 0 END AS mine
          FROM tags t
          LEFT JOIN object_tags ot ON ot.tag_id = t.id
          LEFT JOIN object_collections oc ON oc.object_id = ot.object_id
          WHERE t.user_id = ?1
          GROUP BY t.id
-         ORDER BY here DESC, uses DESC, t.name
+         ORDER BY mine DESC, here DESC, uses DESC, t.name
          LIMIT ?3`,
       )
       .bind(userId, collectionId, limit)

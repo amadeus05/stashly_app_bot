@@ -22,7 +22,9 @@ export type DialogState =
   | 'field:scope'
   | 'field:options'
   | 'field:rename'
-  | 'option:rename';
+  | 'option:rename'
+  | 'tag:new'
+  | 'tag:rename';
 
 export interface Dialog {
   state: DialogState;
