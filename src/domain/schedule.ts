@@ -12,11 +12,20 @@ export type ScheduleRule =
   | { kind: 'once' }
   | { kind: 'every'; minutes: number }
   /**
-   * Дни недели со временем. Смещение пояса хранится прямо в правиле:
-   * следующее срабатывание считает крон, у которого нет ни пользователя,
-   * ни его настроек — только само правило.
+   * Дни недели, у каждого своё время: «пн в 10:00 и ср в 11:00» — это два
+   * разных часа, а не один на оба дня.
+   *
+   * Смещение пояса хранится прямо в правиле: следующее срабатывание
+   * считает крон, у которого нет ни пользователя, ни его настроек —
+   * только само правило.
    */
-  | { kind: 'weekly'; days: number[]; hour: number; minute: number; offset: number };
+  | { kind: 'weekly'; slots: WeeklySlot[]; offset: number };
+
+export interface WeeklySlot {
+  day: number;
+  hour: number;
+  minute: number;
+}
 
 export interface Schedule {
   at: number;
@@ -83,13 +92,14 @@ function timeFrom(text: string, fallbackHour: number): { hours: number; minutes:
 export function parseSchedule(text: string, nowMs: number, offsetMin: number): Schedule | null {
   const input = text.trim().toLowerCase();
 
-  // «каждый понедельник и среду в 10:00», «по вторникам и пятницам».
-  const days = weekdaysIn(input);
-  if (days.length > 0 && /^(кажд|по)\p{L}*/u.test(input)) {
-    const { hours, minutes } = timeFrom(input, 9);
-    const rule: ScheduleRule = { kind: 'weekly', days, hour: hours, minute: minutes, offset: offsetMin };
-    const at = nextRun(rule, nowMs);
-    if (at) return { at, rule };
+  // «каждый понедельник в 10:00 и среду в 11:00»: у каждого дня своё время.
+  if (weekdaysIn(input).length > 0 && /^(кажд|по)\p{L}*/u.test(input)) {
+    const slots = weeklySlots(input);
+    if (slots.length > 0) {
+      const rule: ScheduleRule = { kind: 'weekly', slots, offset: offsetMin };
+      const at = nextRun(rule, nowMs);
+      if (at) return { at, rule };
+    }
   }
 
   // «каждые 3 часа» — повтор с равным шагом.
@@ -176,6 +186,37 @@ const WEEKDAYS: Array<{ test: RegExp; day: number }> = [
   { test: /суббот|сб/i, day: 6 },
 ];
 
+/**
+ * Разбирает фразу в пары «день — время».
+ *
+ * Фраза режется по «и» и запятым: «пн в 10:00 и ср в 11:00» — два куска,
+ * у каждого свой час. Если время указано один раз на всю фразу, оно
+ * относится ко всем дням; если не указано вовсе — девять утра.
+ */
+function weeklySlots(text: string): WeeklySlot[] {
+  const chunks = text.split(/\s+и\s+|,/u).filter((chunk) => chunk.trim().length > 0);
+  const times = chunks.filter((chunk) => TIME.test(chunk)).length;
+  const common = timeFrom(text, 9);
+
+  const slots: WeeklySlot[] = [];
+
+  for (const chunk of chunks) {
+    const days = weekdaysIn(chunk);
+    if (days.length === 0) continue;
+
+    // Своё время у куска; иначе общее, если оно в фразе единственное.
+    const time = TIME.test(chunk) ? timeFrom(chunk, 9) : times === 1 ? common : { hours: 9, minutes: 0 };
+
+    for (const day of days) {
+      if (!slots.some((slot) => slot.day === day)) {
+        slots.push({ day, hour: time.hours, minute: time.minutes });
+      }
+    }
+  }
+
+  return slots.sort((a, b) => a.day - b.day);
+}
+
 function weekdaysIn(text: string): number[] {
   const days = WEEKDAYS.filter((entry) => entry.test.test(text)).map((entry) => entry.day);
   return [...new Set(days)].sort((a, b) => a - b);
@@ -193,14 +234,24 @@ export function nextRun(rule: ScheduleRule, fromMs: number): number | null {
   if (rule.kind === 'every') return fromMs + rule.minutes * MINUTE;
 
   const local = toLocal(fromMs, rule.offset);
+  let best: number | null = null;
 
+  // Каждый день недели проверяем со своим временем и берём ближайшее.
   for (let shift = 0; shift <= 7; shift += 1) {
-    const candidate = new Date(local.getTime());
-    candidate.setUTCDate(candidate.getUTCDate() + shift);
-    candidate.setUTCHours(rule.hour, rule.minute, 0, 0);
+    const day = new Date(local.getTime());
+    day.setUTCDate(day.getUTCDate() + shift);
 
-    const at = fromLocal(candidate, rule.offset);
-    if (rule.days.includes(candidate.getUTCDay()) && at > fromMs) return at;
+    for (const slot of rule.slots) {
+      if (slot.day !== day.getUTCDay()) continue;
+
+      const candidate = new Date(day.getTime());
+      candidate.setUTCHours(slot.hour, slot.minute, 0, 0);
+
+      const at = fromLocal(candidate, rule.offset);
+      if (at > fromMs && (best === null || at < best)) best = at;
+    }
+
+    if (best !== null) return best;
   }
 
   return null;
@@ -226,10 +277,19 @@ export function describeSchedule(nextAt: string, rule: ScheduleRule, offsetMin: 
 
   if (rule.kind === 'weekly') {
     const names = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
-    const list = rule.days.map((day) => names[day]).join(', ');
-    const hh = String(rule.hour).padStart(2, '0');
-    const mi = String(rule.minute).padStart(2, '0');
-    return `${list} в ${hh}:${mi} · ближайшее ${when}`;
+    const sameTime = rule.slots.every(
+      (slot) => slot.hour === rule.slots[0]!.hour && slot.minute === rule.slots[0]!.minute,
+    );
+
+    const time = (slot: WeeklySlot) =>
+      `${String(slot.hour).padStart(2, '0')}:${String(slot.minute).padStart(2, '0')}`;
+
+    // Одинаковое время не повторяем у каждого дня — «пн, ср в 10:00».
+    const list = sameTime
+      ? `${rule.slots.map((slot) => names[slot.day]).join(', ')} в ${time(rule.slots[0]!)}`
+      : rule.slots.map((slot) => `${names[slot.day]} ${time(slot)}`).join(', ');
+
+    return `${list} · ближайшее ${when}`;
   }
 
   const minutes = rule.minutes;

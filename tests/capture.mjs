@@ -255,8 +255,8 @@ check('непонятное отвергается', parseSchedule('когда-�
 // правило не распозналось, а время «в 10:00» подхватилось отдельно.
 const { nextRun } = await import('../.test-build/domain/schedule.js');
 const weekly = at('каждый понедельник и среду в 10:00');
-check('дни недели распознаны', weekly.rule.days, [1, 3]);
-check('время недельного правила', [weekly.rule.hour, weekly.rule.minute], [10, 0]);
+check('дни недели распознаны', weekly.rule.slots.map((s) => s.day), [1, 3]);
+check('время недельного правила', weekly.rule.slots.map((s) => s.hour), [10, 10]);
 check('пояс сохранён в правиле', weekly.rule.offset, TZ);
 // 29.07.2026 — среда; 10:00 местного это 07:00 UTC, уже прошло.
 check('ближайшее — следующий подходящий день',
@@ -264,7 +264,17 @@ check('ближайшее — следующий подходящий день',
 check('следующее после срабатывания',
   new Date(nextRun(weekly.rule, Date.parse('2026-08-03T07:00:00.000Z'))).toISOString(),
   '2026-08-05T07:00:00.000Z');
-check('«по вторникам и пятницам»', at('по вторникам и пятницам в 19:00').rule.days, [2, 5]);
+check('«по вторникам и пятницам»', at('по вторникам и пятницам в 19:00').rule.slots.map((s) => s.day), [2, 5]);
+
+// «пн в 10:00 и ср в 11:00» — два разных часа, а не один на оба дня.
+const mixed = at('каждый понедельник в 10:00 и среду в 11:00').rule;
+check('у каждого дня своё время', mixed.slots, [
+  { day: 1, hour: 10, minute: 0 },
+  { day: 3, hour: 11, minute: 0 },
+]);
+check('описание разного времени',
+  describeSchedule('2026-08-03T07:00:00.000Z', mixed, TZ),
+  'пн 10:00, ср 11:00 · ближайшее 03.08 в 10:00');
 check('разовое не переносится', nextRun({ kind: 'once' }, NOW), null);
 check('«через» не требует пояса', needsTimezone('через 40 минут'), false);
 check('«завтра в 9» требует пояса', needsTimezone('завтра в 9'), true);

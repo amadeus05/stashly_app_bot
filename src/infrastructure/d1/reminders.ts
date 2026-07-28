@@ -23,11 +23,36 @@ interface ReminderRow {
   active: number;
 }
 
+/** Правило старой формы: один час на все дни сразу. */
+interface LegacyWeekly {
+  kind: 'weekly';
+  days: number[];
+  hour: number;
+  minute: number;
+  offset: number;
+}
+
 function parseRule(raw: string): ScheduleRule {
   try {
-    const value = JSON.parse(raw) as ScheduleRule;
+    const value = JSON.parse(raw) as ScheduleRule | LegacyWeekly;
     if (value.kind === 'every' && Number.isFinite(value.minutes)) return value;
-    if (value.kind === 'weekly' && Array.isArray(value.days) && value.days.length > 0) return value;
+
+    if (value.kind === 'weekly') {
+      if ('slots' in value && Array.isArray(value.slots) && value.slots.length > 0) return value;
+
+      // Правила, сохранённые до появления времени у каждого дня. Читаем их
+      // как есть, а не теряем: у пользователя они уже стоят и должны
+      // продолжать приходить.
+      const legacy = value as LegacyWeekly;
+      if (Array.isArray(legacy.days) && legacy.days.length > 0) {
+        return {
+          kind: 'weekly',
+          offset: legacy.offset ?? 0,
+          slots: legacy.days.map((day) => ({ day, hour: legacy.hour ?? 9, minute: legacy.minute ?? 0 })),
+        };
+      }
+    }
+
     return { kind: 'once' };
   } catch {
     return { kind: 'once' };
