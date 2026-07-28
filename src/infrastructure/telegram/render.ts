@@ -240,16 +240,19 @@ export function renderHits(
       if (hit.matchedType === 'entry') continue;
 
       lines.push('', `📄 <b>${esc(hit.entryTitle)}</b>`);
-      if (hit.snippet) lines.push(`   ${HIT_ICON[hit.matchedType] ?? '·'} <i>${esc(hit.snippet)}</i>`);
+      if (hit.snippet) lines.push(`└ ${HIT_ICON[hit.matchedType] ?? '·'} <i>${esc(hit.snippet)}</i>`);
       continue;
     }
 
     lines.push('', `📄 <b>${esc(hit.entryTitle)}</b>`);
-    for (const site of found) {
+
+    // Дерево: ├ и └ сами читаются как «внутри этой записи».
+    found.forEach((site, index) => {
+      const glyph = index === found.length - 1 ? '└' : '├';
       const icon = SITE_ICON[site.kind] ?? '·';
       const label = site.label ? `<b>${esc(site.label)}:</b> ` : '';
-      lines.push(`   ${icon} ${label}${esc(clamp(site.text, 90))}`);
-    }
+      lines.push(`${glyph} ${icon} ${label}${esc(clamp(site.text, 90))}`);
+    });
   }
 
   return joinWithin(lines, CARD_LIMIT) + pageLabel(page);

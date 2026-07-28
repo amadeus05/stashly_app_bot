@@ -153,6 +153,20 @@ console.log('\nотрисовка выдачи:');
 check('поле попало в выдачу', rendered.includes('Оценка:</b> 5'), true);
 check('название записи показано', rendered.includes('Liza Evans'), true);
 check('старый формат ушёл', rendered.includes(' — '), false);
+check('единственное место — закрывающая ветвь', rendered.includes('└ 🔹'), true);
+
+const twoSites = renderHits(
+  { items: [hit], page: 0, hasMore: false },
+  'оценка',
+  new Map([
+    ['e1', [
+      { kind: 'property', label: 'Оценка', text: '5', matched: true },
+      { kind: 'note', label: '', text: 'Оценка высший бал!', matched: true },
+    ]],
+  ]),
+);
+check('первая ветвь — промежуточная', twoSites.includes('├ 🔹'), true);
+check('последняя — закрывающая', twoSites.includes('└ 💬'), true);
 
 // Модель возвращает лишние поля, строку вместо числа, выдуманный
 // оператор. Проверяем не модель, а то, что мы делаем с её ответом.
