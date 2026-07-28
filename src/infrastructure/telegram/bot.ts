@@ -779,6 +779,31 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
         if (arg) await showManage(ctx, userId, arg, true);
         return;
 
+      case CB.editProperty: {
+        if (!arg) return;
+        const property = await app.entries.findProperty(userId, arg);
+        if (!property) {
+          await ctx.reply('Поле не найдено.');
+          return;
+        }
+
+        // Ищем поле в справочнике по имени: если оно там есть, правка
+        // пойдёт через список значений и с проверкой типа.
+        const object = await app.entries.findById(userId, property.objectId);
+        const defs = object ? await app.fieldsFor(userId, property.objectId, object.type) : [];
+        const def = defs.find((item) => item.key.toLowerCase() === property.key.toLowerCase());
+
+        await askValue(ctx, userId, property.objectId, property.key, def?.id ?? null);
+        return;
+      }
+
+      case CB.editNote: {
+        if (!arg) return;
+        await app.state.set(userId, 'note:edit', { noteId: arg });
+        await ctx.reply('Новый текст заметки?', ASK);
+        return;
+      }
+
       case CB.deleteProperty: {
         if (!arg) return;
         const objectId = await app.deleteProperty(userId, arg);
@@ -1442,6 +1467,18 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
           `Тип значения для «${esc(input)}»?\n\nОт типа зависит проверка ввода и сравнения в поиске.`,
           { ...HTML, reply_markup: typePicker() },
         );
+        return;
+      }
+
+      case 'note:edit': {
+        const noteId = dialog.payload.noteId;
+        if (!noteId) return;
+
+        const parentId = await app.entries.updateNote(userId, noteId, input);
+        await app.search.flushDirty();
+        await app.state.clear(userId);
+
+        if (parentId) await showObject(ctx, userId, parentId);
         return;
       }
 

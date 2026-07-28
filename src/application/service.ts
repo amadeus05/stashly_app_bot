@@ -16,6 +16,8 @@ export interface Page<T> {
   items: T[];
   page: number;
   hasMore: boolean;
+  /** Известно, только когда список посчитан целиком — для счётчика «2/3». */
+  pages?: number;
 }
 
 /**
@@ -180,13 +182,21 @@ export class NoteKeeper {
   }
 
   async recent(userId: number, page = 0): Promise<Page<StoredObject>> {
-    const rows = await this.entries.listRecent(userId, PAGE_SIZE + 1, page * PAGE_SIZE);
-    return paginate(rows, page);
+    const [rows, total] = await Promise.all([
+      this.entries.listRecent(userId, PAGE_SIZE + 1, page * PAGE_SIZE),
+      this.entries.countEntries(userId),
+    ]);
+
+    return { ...paginate(rows, page), pages: Math.max(1, Math.ceil(total / PAGE_SIZE)) };
   }
 
   async byCollection(collectionId: string, page = 0): Promise<Page<StoredObject>> {
-    const rows = await this.entries.listByCollection(collectionId, PAGE_SIZE + 1, page * PAGE_SIZE);
-    return paginate(rows, page);
+    const [rows, total] = await Promise.all([
+      this.entries.listByCollection(collectionId, PAGE_SIZE + 1, page * PAGE_SIZE),
+      this.collections.countEntries(collectionId),
+    ]);
+
+    return { ...paginate(rows, page), pages: Math.max(1, Math.ceil(total / PAGE_SIZE)) };
   }
 
   /**

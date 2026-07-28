@@ -267,6 +267,30 @@ export class EntryRepository {
     };
   }
 
+  /** Свойство по id — чтобы открыть его на правку, зная только кнопку. */
+  async findProperty(userId: number, propertyId: string): Promise<{ objectId: string; key: string } | null> {
+    const row = await this.db
+      .prepare(`SELECT object_id, key FROM properties WHERE id = ?1 AND user_id = ?2`)
+      .bind(propertyId, userId)
+      .first<{ object_id: string; key: string }>();
+
+    return row ? { objectId: row.object_id, key: row.key } : null;
+  }
+
+  /** Правка текста заметки на месте, без удаления и создания заново. */
+  async updateNote(userId: number, noteId: string, text: string): Promise<string | null> {
+    const note = await this.findById(userId, noteId);
+    if (!note || note.type !== 'note') return null;
+
+    await this.db
+      .prepare(`UPDATE objects SET body = ?3, updated_at = ?4 WHERE id = ?1 AND user_id = ?2`)
+      .bind(noteId, userId, text.trim(), nowIso())
+      .run();
+
+    if (note.parentId) await this.touch(note.parentId);
+    return note.parentId;
+  }
+
   /** Свойство удаляется по своему id; триггер сам пометит объект на переиндексацию. */
   async deleteProperty(userId: number, propertyId: string): Promise<string | null> {
     const row = await this.db

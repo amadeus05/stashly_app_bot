@@ -67,6 +67,8 @@ export const CB = {
   collectionCard: 'cc',
   collectionRename: 'crn',
   collectionIcon: 'cic',
+  editProperty: 'ep',
+  editNote: 'en',
   fieldRename: 'frn',
   fieldRetype: 'frt',
   fieldRescope: 'frs',
@@ -358,14 +360,24 @@ export function manageMenu(items: {
 }): InlineKeyboard {
   const keyboard = new InlineKeyboard();
 
+  // Тап по тексту правит, корзина рядом удаляет — как в списке значений.
   for (const property of items.properties) {
-    keyboard.text(`🗑 ${property.key}: ${property.value}`.slice(0, 40), `${CB.deleteProperty}:${property.id}`).row();
+    keyboard
+      .text(`${property.key}: ${property.value}`.slice(0, 30), `${CB.editProperty}:${property.id}`)
+      .text('🗑', `${CB.deleteProperty}:${property.id}`)
+      .row();
   }
+
+  // Тег правится в справочнике — здесь его можно только снять.
   for (const tag of items.tags) {
     keyboard.text(`🗑 #${tag.name}`.slice(0, 40), `${CB.deleteTag}:${tag.id}`).row();
   }
+
   for (const note of items.notes) {
-    keyboard.text(`🗑 ${note.body ?? ''}`.slice(0, 40), `${CB.deleteNote}:${note.id}`).row();
+    keyboard
+      .text(`${note.body ?? ''}`.slice(0, 30), `${CB.editNote}:${note.id}`)
+      .text('🗑', `${CB.deleteNote}:${note.id}`)
+      .row();
   }
 
   const back = items.isAttachment ? `${CB.attachment}:${items.backTo}` : `${CB.entry}:${items.backTo}`;
@@ -544,7 +556,13 @@ export function entryList(
   for (const entry of page.items) {
     keyboard.text(`📄 ${entry.title ?? 'Без названия'}`, `${CB.entry}:${entry.id}`).row();
   }
-  pager(keyboard, pagePrefix, page);
+  // Число страниц известно только там, где список посчитан целиком —
+  // тогда показываем «2/3», иначе просто стрелки.
+  if (page.pages !== undefined) {
+    counterPager(keyboard, pagePrefix, page.page, page.pages);
+  } else {
+    pager(keyboard, pagePrefix, page);
+  }
 
   if (collectionId) {
     keyboard.text('⚙️ Настройки раздела', `${CB.collectionCard}:${collectionId}`).row();

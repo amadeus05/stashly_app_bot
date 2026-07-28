@@ -225,6 +225,18 @@ const caption = renderAttachment({
 }, 1);
 check('подпись к медиа влезает в 1024', caption.length <= 1024, true);
 
+// Списки записей показывают «2/3», только когда число страниц посчитано.
+console.log('\nсчётчик в списках записей:');
+const { entryList } = await import('../.test-build/infrastructure/telegram/keyboards.js');
+const rows = (kb) => kb.inline_keyboard.flat().map((b) => b.text);
+
+check('со счётчиком',
+  rows(entryList({ items: [{ id: 'a', title: 'A' }], page: 1, hasMore: true, pages: 3 }, 'r:')).includes('2/3'), true);
+check('без счётчика — стрелки',
+  rows(entryList({ items: [{ id: 'a', title: 'A' }], page: 1, hasMore: true }, 'r:')).includes('➡️'), true);
+check('одна страница — без листалки',
+  rows(entryList({ items: [{ id: 'a', title: 'A' }], page: 0, hasMore: false, pages: 1 }, 'r:')).includes('1/1'), false);
+
 console.log('\nпагинация:');
 const shim = { prepare: () => stmt('SELECT 1'), batch: async () => [] };
 const svc = new NoteKeeper(shim);
