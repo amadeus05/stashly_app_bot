@@ -31,6 +31,7 @@ import {
   mainMenu,
   saveOffer,
 } from './keyboards.js';
+import { stripCommandPrefix } from '../../domain/query.js';
 import { transcribe } from '../../ai/transcribe.js';
 import { extractMedia, titleForMedia } from './media.js';
 import { esc, header, renderAttachment, renderCard, renderHits, renderList } from './render.js';
@@ -1366,11 +1367,8 @@ export function createBot(
        * не делась.
        */
       if (speech) {
-        // Поиск требует совпадения всех слов, а «найди» в записях не
-        // встречается — с ним запрос всегда возвращал бы пусто.
-        const query = speech.replace(/^\s*(найди(?:те)?|найти|поищи|ищи|покажи|поиск|find|search)\b[\s,:—-]*/iu, '');
-
-        const hits = await app.find(userId, query || speech);
+        const query = stripCommandPrefix(speech);
+        const hits = await app.find(userId, query);
         await app.state.set(userId, 'entry:collection', pending);
 
         const keyboard =
@@ -1378,7 +1376,7 @@ export function createBot(
             ? hitList(hits).row().text('💾 Сохранить голосовое', CB.savePending)
             : saveOffer();
 
-        await ctx.reply(renderHits(hits, query || speech), { ...HTML, reply_markup: keyboard });
+        await ctx.reply(renderHits(hits, query), { ...HTML, reply_markup: keyboard });
         return;
       }
 

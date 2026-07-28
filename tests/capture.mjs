@@ -128,6 +128,15 @@ check('поиск по началу слова', toMatchExpression('дон'), '"
 check('один символ — без звёздочки', toMatchExpression('я'), '"я"');
 check('пустой запрос', toMatchExpression('   '), null);
 
+// Наговоренное «найди X»: слова «найди» в записях нет, и поиск по всем
+// словам сразу вернул бы пусто.
+const { stripCommandPrefix } = await import('../.test-build/domain/query.js');
+check('команда отброшена', stripCommandPrefix('Найди Ваня Дмитриенко.'), 'Ваня Дмитриенко.');
+check('латиница тоже', stripCommandPrefix('find Ivan'), 'Ivan');
+check('слово целиком, не начало', stripCommandPrefix('Найденное сокровище'), 'Найденное сокровище');
+check('одинокое «найди» не пустеет', stripCommandPrefix('найди'), 'найди');
+check('обычная фраза не тронута', stripCommandPrefix('лучшая битва'), 'лучшая битва');
+
 console.log('\nтипы значений:');
 check('9,8 -> number', inferValue('9,8'), { type: 'number', valueText: null, valueNum: 9.8, valueDate: null });
 check('12:34 -> duration 754с', inferValue('12:34').valueNum, 754);
