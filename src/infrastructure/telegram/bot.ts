@@ -1349,13 +1349,40 @@ export function createBot(
       }
 
       // Основной сценарий: переслали боту что-то — сохраняем в два тапа.
-      const collections = await app.collections.list(userId);
       const pending = {
         // Сказанное — лучшее название, чем «Голосовое от 26.07».
         title: speech ? speech.slice(0, 120) : titleForMedia(media),
         media: JSON.stringify(media),
         speech: speech ?? '',
       };
+
+      /**
+       * Наговоренное ведёт себя как набранное: сначала ищем.
+       *
+       * Человек, сказавший «найди Ваню Дмитриенко», хочет поиск, а не
+       * запись с таким названием. Понимать команды по-настоящему будет
+       * разбор намерений; пока достаточно того же правила, что и для
+       * текста — а голосовое остаётся под рукой, кнопка сохранения никуда
+       * не делась.
+       */
+      if (speech) {
+        // Поиск требует совпадения всех слов, а «найди» в записях не
+        // встречается — с ним запрос всегда возвращал бы пусто.
+        const query = speech.replace(/^\s*(найди(?:те)?|найти|поищи|ищи|покажи|поиск|find|search)\b[\s,:—-]*/iu, '');
+
+        const hits = await app.find(userId, query || speech);
+        await app.state.set(userId, 'entry:collection', pending);
+
+        const keyboard =
+          hits.items.length > 0
+            ? hitList(hits).row().text('💾 Сохранить голосовое', CB.savePending)
+            : saveOffer();
+
+        await ctx.reply(renderHits(hits, query || speech), { ...HTML, reply_markup: keyboard });
+        return;
+      }
+
+      const collections = await app.collections.list(userId);
 
       if (collections.length === 0) {
         await app.state.set(userId, 'collection:name', pending);
