@@ -196,8 +196,26 @@ export class FieldRepository {
     );
   }
 
-  async deleteOption(optionId: string): Promise<void> {
+  /**
+   * Удаляет значение и возвращает поле, которому оно принадлежало.
+   *
+   * id значения приходит из callback_data, то есть с клиента — проверяем
+   * владельца через связь с полем, а не доверяем присланному.
+   */
+  async deleteOption(userId: number, optionId: string): Promise<string | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT o.field_def_id AS id FROM field_options o
+         JOIN field_defs f ON f.id = o.field_def_id
+         WHERE o.id = ?1 AND f.user_id = ?2`,
+      )
+      .bind(optionId, userId)
+      .first<{ id: string }>();
+
+    if (!row) return null;
+
     await this.db.prepare(`DELETE FROM field_options WHERE id = ?1`).bind(optionId).run();
+    return row.id;
   }
 
   // --- настройки экрана ----------------------------------------------------

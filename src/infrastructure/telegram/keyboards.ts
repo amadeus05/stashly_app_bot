@@ -49,6 +49,9 @@ export const CB = {
   pickValue: 'pv',
   valuePage: 'vp',
   newValue: 'nv',
+  fieldOptions: 'fol',
+  optionsPage: 'op',
+  deleteOption: 'dox',
   deleteProperty: 'dp',
   deleteTag: 'dt',
   deleteNote: 'dn',
@@ -93,13 +96,39 @@ export function fieldFilterMenu(collections: Array<{ id: string; name: string; i
   return keyboard.text('⬅️ Назад', CB.fields);
 }
 
-export function fieldCard(defId: string): InlineKeyboard {
-  return new InlineKeyboard()
-    .text('➕ Значения', `${CB.fieldAddOption}:${defId}`)
+export function fieldCard(defId: string, hasOptions: boolean): InlineKeyboard {
+  const keyboard = new InlineKeyboard().text('➕ Значения', `${CB.fieldAddOption}:${defId}`);
+
+  if (hasOptions) {
+    keyboard.text('✏️ Править значения', `${CB.fieldOptions}:${defId}`);
+  }
+
+  return keyboard
     .row()
     .text('🗑 Удалить поле', `${CB.fieldDelete}:${defId}`)
     .row()
     .text('⬅️ К полям', CB.fields);
+}
+
+/** Правка списка значений: тап удаляет, добавление — отдельной кнопкой. */
+export function optionsMenu(
+  options: Array<{ id: string; value: string }>,
+  defId: string,
+  page = 0,
+): InlineKeyboard {
+  const keyboard = new InlineKeyboard();
+  const chunk = slice(options, page);
+
+  for (const option of chunk.items) {
+    keyboard.text(`🗑 ${option.value}`.slice(0, 40), `${CB.deleteOption}:${option.id}`).row();
+  }
+
+  counterPager(keyboard, `${CB.optionsPage}:`, chunk.page, chunk.pages);
+
+  return keyboard
+    .text('➕ Добавить', `${CB.fieldAddOption}:${defId}`)
+    .row()
+    .text('⬅️ К полю', `${CB.field}:${defId}`);
 }
 
 /** Тип задаётся один раз и включает проверку ввода. */

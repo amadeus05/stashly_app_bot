@@ -11,6 +11,7 @@ import {
   collectionPicker,
   fieldCard,
   fieldFilterMenu,
+  optionsMenu,
   fieldsMenu,
   scopePicker,
   typePicker,
@@ -352,7 +353,24 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
       lines.push('', '<i>Значений нет — вводятся вручную.</i>');
     }
 
-    await screen(ctx, lines.join('\n'), fieldCard(defId), edit);
+    await screen(ctx, lines.join('\n'), fieldCard(defId, options.length > 0), edit);
+  }
+
+  /** Правка списка значений: тап по значению удаляет его. */
+  async function showOptions(ctx: Context, userId: number, defId: string, page: number): Promise<void> {
+    const def = await app.fields.find(userId, defId);
+    if (!def) return;
+
+    // Поле держим в состоянии — листалка значений знает только номер страницы.
+    await app.state.set(userId, 'idle', { defId });
+
+    const options = await app.fields.options(defId);
+    const text =
+      options.length === 0
+        ? header(def.key) + '\nЗначений не осталось — вводятся вручную.'
+        : header(def.key) + '\nНажмите, чтобы удалить значение.';
+
+    await screen(ctx, text, optionsMenu(options, defId, page), true);
   }
 
   /** Экран выбора названия поля из уже использованных. */
@@ -853,6 +871,23 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
         await app.fields.delete(userId, arg);
         await showFields(ctx, userId, 0, true);
         return;
+
+      case CB.fieldOptions:
+        if (arg) await showOptions(ctx, userId, arg, 0);
+        return;
+
+      case CB.optionsPage: {
+        const dialog = await app.state.get(userId);
+        if (dialog.payload.defId) await showOptions(ctx, userId, dialog.payload.defId, Number(arg ?? '0'));
+        return;
+      }
+
+      case CB.deleteOption: {
+        if (!arg) return;
+        const defId = await app.fields.deleteOption(userId, arg);
+        if (defId) await showOptions(ctx, userId, defId, 0);
+        return;
+      }
 
       case CB.collectionsPage: {
         const collections = await app.collections.list(userId);
