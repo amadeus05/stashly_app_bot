@@ -17,6 +17,7 @@ import {
   tagScopePicker,
   tagsFilterMenu,
   tagsMenu,
+  collectionCard,
   fieldsMenu,
   scopePicker,
   typePicker,
@@ -841,6 +842,33 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
         await showFields(ctx, userId, 0, true);
         return;
 
+      case CB.collectionCard: {
+        if (!arg) return;
+        const collection = await app.collections.find(userId, arg);
+        if (!collection) return;
+
+        const count = await app.collections.countEntries(arg);
+        await screen(
+          ctx,
+          header(`${collection.icon ?? '📁'} ${collection.name}`) + `\n<i>записей: ${count}</i>`,
+          collectionCard(arg),
+          true,
+        );
+        return;
+      }
+
+      case CB.collectionRename:
+        if (!arg) return;
+        await app.state.set(userId, 'collection:rename', { collectionId: arg });
+        await ctx.reply('Новое название раздела?', ASK);
+        return;
+
+      case CB.collectionIcon:
+        if (!arg) return;
+        await app.state.set(userId, 'collection:icon', { collectionId: arg });
+        await ctx.reply('Пришлите эмодзи для раздела.\n\nИли напишите <code>убрать</code>, чтобы вернуть стандартный.', ASK);
+        return;
+
       case CB.tags:
         await showTags(ctx, userId, 0, true);
         return;
@@ -1414,6 +1442,51 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
           `Тип значения для «${esc(input)}»?\n\nОт типа зависит проверка ввода и сравнения в поиске.`,
           { ...HTML, reply_markup: typePicker() },
         );
+        return;
+      }
+
+      case 'collection:rename': {
+        const collectionId = dialog.payload.collectionId;
+        if (!collectionId) return;
+
+        const problem = NoteKeeper.validateName(input);
+        if (problem) {
+          await ctx.reply(`${problem}\n\nВведите название ещё раз.`, ASK);
+          return;
+        }
+
+        const conflict = await app.collections.rename(userId, collectionId, input);
+        if (conflict) {
+          await ctx.reply(`${conflict}\n\nВведите другое название.`, ASK);
+          return;
+        }
+
+        await app.state.clear(userId);
+        const page = await app.byCollection(collectionId, 0);
+        await ctx.reply(renderList(page, 'Раздел переименован'), {
+          ...HTML,
+          reply_markup: entryList(page, `${CB.collection}:${collectionId}:`, collectionId),
+        });
+        return;
+      }
+
+      case 'collection:icon': {
+        const collectionId = dialog.payload.collectionId;
+        if (!collectionId) return;
+
+        const icon = /^убрать$/i.test(input) ? null : /^\p{Extended_Pictographic}️?$/u.exec(input)?.[0];
+        if (icon === undefined) {
+          await ctx.reply('Нужен один эмодзи или слово «убрать».', ASK);
+          return;
+        }
+
+        await app.collections.setIcon(userId, collectionId, icon);
+        await app.state.clear(userId);
+        const collection = await app.collections.find(userId, collectionId);
+        await ctx.reply(`Значок обновлён: ${collection?.icon ?? '📁'} <b>${esc(collection?.name ?? '')}</b>`, {
+          ...HTML,
+          reply_markup: collectionCard(collectionId),
+        });
         return;
       }
 

@@ -64,6 +64,9 @@ export const CB = {
   tagRescope: 'tgs',
   tagScope: 'tgz',
   tagDelete: 'tgd',
+  collectionCard: 'cc',
+  collectionRename: 'crn',
+  collectionIcon: 'cic',
   fieldRename: 'frn',
   fieldRetype: 'frt',
   fieldRescope: 'frs',
@@ -544,9 +547,19 @@ export function entryList(
   pager(keyboard, pagePrefix, page);
 
   if (collectionId) {
-    keyboard.text('🗑 Удалить раздел', `${CB.deleteCollection}:${collectionId}`).row();
+    keyboard.text('⚙️ Настройки раздела', `${CB.collectionCard}:${collectionId}`).row();
   }
   return keyboard.text('⬅️ Меню', CB.menu);
+}
+
+export function collectionCard(collectionId: string): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('✏️ Название', `${CB.collectionRename}:${collectionId}`)
+    .text('😀 Значок', `${CB.collectionIcon}:${collectionId}`)
+    .row()
+    .text('🗑 Удалить раздел', `${CB.deleteCollection}:${collectionId}`)
+    .row()
+    .text('⬅️ К разделу', `${CB.collection}:${collectionId}:0`);
 }
 
 export function hitList(page: Page<SearchHit>): InlineKeyboard {

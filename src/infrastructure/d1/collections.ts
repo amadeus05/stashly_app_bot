@@ -64,6 +64,42 @@ export class CollectionRepository {
       .run();
   }
 
+  /**
+   * Переименование. Имя раздела уникально на пользователя, поэтому
+   * столкновение объясняем словами, а не роняем запрос.
+   */
+  async rename(userId: number, collectionId: string, name: string): Promise<string | null> {
+    try {
+      await this.db
+        .prepare(`UPDATE collections SET name = ?3, name_norm = ?4 WHERE id = ?1 AND user_id = ?2`)
+        .bind(collectionId, userId, name.trim(), norm(name))
+        .run();
+
+      return null;
+    } catch (error) {
+      if (String(error).includes('UNIQUE')) {
+        return 'Раздел с таким названием уже есть.';
+      }
+      throw error;
+    }
+  }
+
+  async setIcon(userId: number, collectionId: string, icon: string | null): Promise<void> {
+    await this.db
+      .prepare(`UPDATE collections SET icon = ?3 WHERE id = ?1 AND user_id = ?2`)
+      .bind(collectionId, userId, icon)
+      .run();
+  }
+
+  async find(userId: number, collectionId: string): Promise<Collection | null> {
+    const row = await this.db
+      .prepare(`SELECT id, user_id, name, icon FROM collections WHERE id = ?1 AND user_id = ?2`)
+      .bind(collectionId, userId)
+      .first<CollectionRow>();
+
+    return row ? toCollection(row) : null;
+  }
+
   async findByName(userId: number, name: string): Promise<Collection | null> {
     const row = await this.db
       .prepare(`SELECT id, user_id, name, icon FROM collections WHERE user_id = ?1 AND name_norm = ?2`)
