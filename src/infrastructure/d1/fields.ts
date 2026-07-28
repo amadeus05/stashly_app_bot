@@ -247,6 +247,43 @@ export class FieldRepository {
   }
 
   /**
+   * Переименовывает значение.
+   *
+   * Возвращает id поля либо текст проблемы: значения уникальны в пределах
+   * поля, и переименование в уже существующее должно объясняться словами.
+   */
+  async renameOption(
+    userId: number,
+    optionId: string,
+    value: string,
+  ): Promise<{ defId: string | null; problem: string | null }> {
+    const row = await this.db
+      .prepare(
+        `SELECT o.field_def_id AS id FROM field_options o
+         JOIN field_defs f ON f.id = o.field_def_id
+         WHERE o.id = ?1 AND f.user_id = ?2`,
+      )
+      .bind(optionId, userId)
+      .first<{ id: string }>();
+
+    if (!row) return { defId: null, problem: 'Значение не найдено.' };
+
+    try {
+      await this.db
+        .prepare(`UPDATE field_options SET value = ?2, value_norm = ?3 WHERE id = ?1`)
+        .bind(optionId, value.trim(), norm(value))
+        .run();
+
+      return { defId: row.id, problem: null };
+    } catch (error) {
+      if (String(error).includes('UNIQUE')) {
+        return { defId: row.id, problem: 'Такое значение у этого поля уже есть.' };
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Удаляет значение и возвращает поле, которому оно принадлежало.
    *
    * id значения приходит из callback_data, то есть с клиента — проверяем

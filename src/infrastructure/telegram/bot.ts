@@ -369,7 +369,7 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
     const text =
       options.length === 0
         ? header(def.key) + '\nЗначений не осталось — вводятся вручную.'
-        : header(def.key) + '\nНажмите, чтобы удалить значение.';
+        : header(def.key) + '\nНажмите на значение, чтобы переименовать. Корзина — удалить.';
 
     await screen(ctx, text, optionsMenu(options, defId, page), true);
   }
@@ -964,6 +964,14 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
         return;
       }
 
+      case CB.renameOption: {
+        if (!arg) return;
+        const dialog = await app.state.get(userId);
+        await app.state.set(userId, 'option:rename', { optionId: arg, defId: dialog.payload.defId ?? '' });
+        await ctx.reply('Новое название значения?', ASK);
+        return;
+      }
+
       case CB.deleteOption: {
         if (!arg) return;
         const defId = await app.fields.deleteOption(userId, arg);
@@ -1312,6 +1320,22 @@ export function createBot(token: string, db: D1Database, botInfo?: UserFromGetMe
 
         await app.state.clear(userId);
         await showField(ctx, userId, defId, false);
+        return;
+      }
+
+      case 'option:rename': {
+        const optionId = dialog.payload.optionId;
+        if (!optionId) return;
+
+        const { defId, problem } = await app.fields.renameOption(userId, optionId, input);
+        if (problem) {
+          // Мастер оставляем открытым — ввод не теряется.
+          await ctx.reply(`${problem}\n\nВведите другое название.`, ASK);
+          return;
+        }
+
+        await app.state.clear(userId);
+        if (defId) await showOptions(ctx, userId, defId, 0);
         return;
       }
 

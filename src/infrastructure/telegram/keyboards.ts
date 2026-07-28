@@ -52,6 +52,7 @@ export const CB = {
   fieldOptions: 'fol',
   optionsPage: 'op',
   deleteOption: 'dox',
+  renameOption: 'ron',
   fieldRename: 'frn',
   fieldRetype: 'frt',
   fieldRescope: 'frs',
@@ -142,8 +143,13 @@ export function optionsMenu(
   const keyboard = new InlineKeyboard();
   const chunk = slice(options, page);
 
+  // Значение и корзина в одном ряду: тап по тексту правит, по корзине —
+  // удаляет. Отдельный экран ради двух действий тут был бы лишним шагом.
   for (const option of chunk.items) {
-    keyboard.text(`🗑 ${option.value}`.slice(0, 40), `${CB.deleteOption}:${option.id}`).row();
+    keyboard
+      .text(option.value.slice(0, 30), `${CB.renameOption}:${option.id}`)
+      .text('🗑', `${CB.deleteOption}:${option.id}`)
+      .row();
   }
 
   counterPager(keyboard, `${CB.optionsPage}:`, chunk.page, chunk.pages);
