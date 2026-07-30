@@ -317,7 +317,7 @@ export function tagPicker(
 
   // По два в ряд: теги короткие, в один столбец экран растянется зря.
   chunk.items.forEach((tag, index) => {
-    const mark = selected.has(tag.id) ? '✅' : '▫️';
+    const mark = selected.has(tag.id) ? '✓' : '·';
     keyboard.text(`${mark} ${tag.name}`.slice(0, 30), `${CB.toggleTag}:${tag.id}`);
     if (index % 2 === 1) keyboard.row();
   });
@@ -326,7 +326,7 @@ export function tagPicker(
   counterPager(keyboard, `${CB.tagPage}:`, chunk.page, chunk.pages);
 
   const back = isAttachment ? `${CB.attachment}:${backTo}` : `${CB.entry}:${backTo}`;
-  return keyboard.text('✏️ Написать новый', `${CB.newTag}:${backTo}`).row().text('✅ Готово', back);
+  return keyboard.text('✏️ Написать новый', `${CB.newTag}:${backTo}`).row().text('⬅️ Готово', back);
 }
 
 /**
@@ -706,12 +706,12 @@ export function entryCollectionPicker(
   const chunk = slice(collections, page);
 
   for (const collection of chunk.items) {
-    const mark = selected.has(collection.id) ? '✅' : '▫️';
+    const mark = selected.has(collection.id) ? '✓' : '·';
     keyboard
       .text(`${mark} ${collection.icon ?? '📁'} ${collection.name}`.slice(0, 40), `${CB.toggleCollection}:${collection.id}`)
       .row();
   }
 
   counterPager(keyboard, `${CB.entryCollections}:${entryId}:`, chunk.page, chunk.pages);
-  return keyboard.text('✅ Готово', `${CB.entry}:${entryId}`);
+  return keyboard.text('⬅️ Готово', `${CB.entry}:${entryId}`);
 }
