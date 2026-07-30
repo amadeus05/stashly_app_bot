@@ -1187,7 +1187,7 @@ export function createBot(
         const count = await app.collections.countEntries(userId, arg);
         await screen(
           ctx,
-          header(`${collection.icon ?? '📁'} ${collection.name}`) + `\n<i>записей: ${count}</i>`,
+          header(`${collection.icon ? `${collection.icon} ` : ''}${collection.name}`) + `\n<i>записей: ${count}</i>`,
           collectionCard(arg),
           true,
         );
@@ -1757,7 +1757,7 @@ export function createBot(
         }
 
         const collection = await app.createCollection(userId, name, icon);
-        await notice(ctx, `Раздел ${collection.icon ?? '📁'} <b>${esc(collection.name)}</b> создан.`);
+        await notice(ctx, `Раздел ${collection.icon ? `${collection.icon} ` : ''}<b>${esc(collection.name)}</b> создан.`);
 
         // Раздел мог создаваться посреди сохранения — тогда доводим до конца.
         if (dialog.payload.title) {
@@ -1981,7 +1981,7 @@ export function createBot(
         await app.collections.setIcon(userId, collectionId, icon);
         await app.state.clear(userId);
         const collection = await app.collections.find(userId, collectionId);
-        await screen(ctx, `Значок обновлён: ${collection?.icon ?? '📁'} <b>${esc(collection?.name ?? '')}</b>`, collectionCard(collectionId));
+        await screen(ctx, `Значок обновлён: ${collection?.icon ?? 'убран'} <b>${esc(collection?.name ?? '')}</b>`, collectionCard(collectionId));
         return;
       }
 

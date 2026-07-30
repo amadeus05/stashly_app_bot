@@ -81,7 +81,7 @@ export function renderCard(card: EntryCard): string {
   // Дерево вместо строки через точку: символы ├ и └ сами читаются как
   // «принадлежит», и каждый раздел виден отдельной ветвью.
   const branches = [
-    ...card.collections.map((c) => `${c.icon ?? '📁'} ${esc(c.name)}`),
+    ...card.collections.map((c) => `${c.icon ? `${c.icon} ` : ''}${esc(c.name)}`),
     `🕘 ${shortDate(card.entry.createdAt)}`,
   ];
 

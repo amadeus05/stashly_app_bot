@@ -347,7 +347,7 @@ check('страница за пределами зажимается',
 const tags = Array.from({ length: 10 }, (_, i) => ({ id: `t${i}`, name: `тег${i}` }));
 const tagRows = tagPicker(tags, new Set(['t9']), 'obj', false, 1).inline_keyboard.flat();
 check('отметка сохраняется на второй странице',
-  tagRows.some((b) => b.text.startsWith('✅') && b.text.includes('тег9')), true);
+  tagRows.some((b) => b.text.startsWith('✓') && b.text.includes('тег9')), true);
 
 // Превышение лимита Telegram — это не обрезка, а отказ отправить:
 // карточка с длинными заметками просто перестала бы открываться.

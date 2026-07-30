@@ -126,7 +126,7 @@ export function fieldFilterMenu(collections: Array<{ id: string; name: string; i
     .row();
 
   for (const collection of collections) {
-    keyboard.text(`${collection.icon ?? '📁'} ${collection.name}`, `${CB.fieldsFilterSet}:${collection.id}`).row();
+    keyboard.text(`${collection.icon ? `${collection.icon} ` : ''}${collection.name}`, `${CB.fieldsFilterSet}:${collection.id}`).row();
   }
 
   return keyboard.text('⬅️ Назад', CB.fields);
@@ -221,7 +221,7 @@ export function tagsFilterMenu(collections: Array<{ id: string; name: string; ic
     .row();
 
   for (const collection of collections) {
-    keyboard.text(`${collection.icon ?? '📁'} ${collection.name}`, `${CB.tagsFilterSet}:${collection.id}`).row();
+    keyboard.text(`${collection.icon ? `${collection.icon} ` : ''}${collection.name}`, `${CB.tagsFilterSet}:${collection.id}`).row();
   }
 
   return keyboard.text('⬅️ Назад', CB.tags);
@@ -241,7 +241,7 @@ export function tagScopePicker(collections: Array<{ id: string; name: string; ic
   const keyboard = new InlineKeyboard().text('🌐 Без раздела', `${CB.tagScope}:global`).row();
 
   for (const collection of collections) {
-    keyboard.text(`📌 ${collection.icon ?? '📁'} ${collection.name}`, `${CB.tagScope}:${collection.id}`).row();
+    keyboard.text(`📌 ${collection.icon ? `${collection.icon} ` : ''}${collection.name}`, `${CB.tagScope}:${collection.id}`).row();
   }
 
   return keyboard.text('✖️ Отмена', CB.tags);
@@ -270,7 +270,7 @@ export function scopePicker(
   const keyboard = new InlineKeyboard().text('🌐 Везде', `${CB.fieldScope}:global`).row();
 
   for (const collection of collections) {
-    keyboard.text(`📌 ${collection.icon ?? '📁'} ${collection.name}`, `${CB.fieldScope}:${collection.id}`).row();
+    keyboard.text(`📌 ${collection.icon ? `${collection.icon} ` : ''}${collection.name}`, `${CB.fieldScope}:${collection.id}`).row();
   }
 
   return keyboard.text('✖️ Отмена', CB.fields);
@@ -488,7 +488,7 @@ export function collectionsMenu(
   for (const collection of chunk.items) {
     keyboard
       .text(
-        `${collection.icon ?? '📁'} ${collection.name} · ${collection.entryCount}`,
+        `${collection.icon ? `${collection.icon} ` : ''}${collection.name} · ${collection.entryCount}`,
         `${CB.collection}:${collection.id}:0`,
       )
       .row();
@@ -501,7 +501,7 @@ export function collectionsMenu(
 export function collectionPicker(collections: Collection[]): InlineKeyboard {
   const keyboard = new InlineKeyboard();
   for (const collection of collections) {
-    keyboard.text(`${collection.icon ?? '📁'} ${collection.name}`, `${CB.collection}:${collection.id}:pick`).row();
+    keyboard.text(`${collection.icon ? `${collection.icon} ` : ''}${collection.name}`, `${CB.collection}:${collection.id}:pick`).row();
   }
   return keyboard.text('➕ Создать раздел', CB.newCollection).row().text('✖️ Отмена', CB.menu);
 }
@@ -708,7 +708,7 @@ export function entryCollectionPicker(
   for (const collection of chunk.items) {
     const mark = selected.has(collection.id) ? '✓' : '·';
     keyboard
-      .text(`${mark} ${collection.icon ?? '📁'} ${collection.name}`.slice(0, 40), `${CB.toggleCollection}:${collection.id}`)
+      .text(`${mark} ${collection.icon ? `${collection.icon} ` : ''}${collection.name}`.slice(0, 40), `${CB.toggleCollection}:${collection.id}`)
       .row();
   }
 
