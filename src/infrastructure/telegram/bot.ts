@@ -18,6 +18,7 @@ import {
   tagsFilterMenu,
   tagsMenu,
   collectionCard,
+  entryCollectionPicker,
   reminderCard,
   remindersMenu,
   whenPicker,
@@ -520,6 +521,28 @@ export function createBot(
     await screen(ctx, text, keyboard, edit);
   }
 
+  /** В каких разделах лежит запись: тап переключает. */
+  async function showEntryCollections(
+    ctx: Context,
+    userId: number,
+    entryId: string,
+    page: number,
+  ): Promise<void> {
+    const [all, current] = await Promise.all([
+      app.collections.list(userId),
+      app.collections.listForObject(entryId),
+    ]);
+
+    await app.state.set(userId, 'idle', { target: entryId, page: String(page) });
+
+    await screen(
+      ctx,
+      `${header('Разделы записи')}\nЗапись может лежать в нескольких сразу.`,
+      entryCollectionPicker(all, new Set(current.map((item) => item.id)), entryId, page),
+      true,
+    );
+  }
+
   /** Показ результатов + запоминание запроса: в callback_data он не влезет. */
   async function showSearch(ctx: Context, userId: number, query: string, page: number, edit = false): Promise<void> {
     const hits = await app.find(userId, query, page);
@@ -969,6 +992,39 @@ export function createBot(
       case CB.addTag:
         if (arg) await showTagPicker(ctx, userId, arg, true);
         return;
+
+      case CB.entryCollections: {
+        if (!arg) return;
+        await showEntryCollections(ctx, userId, arg, Number(extra ?? '0'));
+        return;
+      }
+
+      case CB.toggleCollection: {
+        if (!arg) return;
+        const dialog = await app.state.get(userId);
+        const entryId = dialog.payload.target;
+        if (!entryId) {
+          await ctx.reply('Экран устарел — откройте запись заново.');
+          return;
+        }
+
+        const current = await app.collections.listForObject(entryId);
+        const inside = current.some((item) => item.id === arg);
+
+        if (inside) {
+          const removed = await app.collections.removeFromObject(userId, entryId, arg);
+          if (!removed) {
+            await ctx.answerCallbackQuery({ text: 'Запись должна остаться хотя бы в одном разделе' });
+            return;
+          }
+        } else {
+          await app.collections.addToObject(userId, entryId, arg);
+        }
+
+        await app.search.flushDirty();
+        await showEntryCollections(ctx, userId, entryId, Number(dialog.payload.page ?? '0'));
+        return;
+      }
 
       case CB.remind: {
         if (!arg) return;

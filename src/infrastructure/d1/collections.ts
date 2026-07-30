@@ -128,6 +128,45 @@ export class CollectionRepository {
     return results.map((row) => ({ ...toCollection(row), entryCount: row.entry_count }));
   }
 
+  /**
+   * Кладёт запись в раздел. Связь many-to-many была в схеме с самого
+   * начала — запись может лежать в нескольких разделах без копий.
+   */
+  async addToObject(userId: number, objectId: string, collectionId: string): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO object_collections(object_id, collection_id)
+         SELECT ?1, ?2 WHERE EXISTS (SELECT 1 FROM collections WHERE id = ?2 AND user_id = ?3)
+         ON CONFLICT DO NOTHING`,
+      )
+      .bind(objectId, collectionId, userId)
+      .run();
+  }
+
+  /**
+   * Убирает запись из раздела, но не даёт остаться вообще без раздела:
+   * такая запись видна только в «Недавних» и поиске, а в списках разделов
+   * пропадает — выглядит как потеря.
+   */
+  async removeFromObject(userId: number, objectId: string, collectionId: string): Promise<boolean> {
+    const row = await this.db
+      .prepare(`SELECT COUNT(*) AS n FROM object_collections WHERE object_id = ?1`)
+      .bind(objectId)
+      .first<{ n: number }>();
+
+    if ((row?.n ?? 0) <= 1) return false;
+
+    await this.db
+      .prepare(
+        `DELETE FROM object_collections WHERE object_id = ?1 AND collection_id = ?2
+         AND EXISTS (SELECT 1 FROM collections WHERE id = ?2 AND user_id = ?3)`,
+      )
+      .bind(objectId, collectionId, userId)
+      .run();
+
+    return true;
+  }
+
   async listForObject(objectId: string): Promise<Collection[]> {
     const { results } = await this.db
       .prepare(

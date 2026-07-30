@@ -70,6 +70,8 @@ export const CB = {
   editProperty: 'ep',
   editNote: 'en',
   renameAttachment: 'ra',
+  entryCollections: 'ec',
+  toggleCollection: 'tc',
   remind: 'rm',
   remindIn: 'ri',
   remindCustom: 'rc',
@@ -524,7 +526,7 @@ export function cardMenu(card: EntryCard): InlineKeyboard {
     keyboard.text('✏️ Убрать лишнее', `${CB.manage}:${id}`).row();
   }
 
-  keyboard.text('⏰ Напомнить', `${CB.remind}:${id}`).row();
+  keyboard.text('📁 Разделы', `${CB.entryCollections}:${id}`).text('⏰ Напомнить', `${CB.remind}:${id}`).row();
 
   return keyboard.text('🗑 Удалить', `${CB.deleteEntry}:${id}`).text('⬅️ Меню', CB.menu);
 }
@@ -685,4 +687,31 @@ export function reminderCard(id: string, active: boolean, objectId: string | nul
     .text('🗑 Удалить', `${CB.reminderDelete}:${id}`)
     .row()
     .text('⬅️ К напоминаниям', CB.reminders);
+}
+
+/**
+ * В каких разделах лежит запись.
+ *
+ * Тап переключает — так один экран закрывает и перенос, и хранение в
+ * нескольких разделах сразу. Отдельного «переместить» не нужно: это
+ * добавить новый раздел и убрать старый.
+ */
+export function entryCollectionPicker(
+  collections: Array<{ id: string; name: string; icon: string | null }>,
+  selected: Set<string>,
+  entryId: string,
+  page = 0,
+): InlineKeyboard {
+  const keyboard = new InlineKeyboard();
+  const chunk = slice(collections, page);
+
+  for (const collection of chunk.items) {
+    const mark = selected.has(collection.id) ? '✅' : '▫️';
+    keyboard
+      .text(`${mark} ${collection.icon ?? '📁'} ${collection.name}`.slice(0, 40), `${CB.toggleCollection}:${collection.id}`)
+      .row();
+  }
+
+  counterPager(keyboard, `${CB.entryCollections}:${entryId}:`, chunk.page, chunk.pages);
+  return keyboard.text('✅ Готово', `${CB.entry}:${entryId}`);
 }
