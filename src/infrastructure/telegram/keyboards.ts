@@ -73,6 +73,7 @@ export const CB = {
   entryCollections: 'ec',
   toggleCollection: 'tc',
   pickerPage: 'pp',
+  confirm: 'cf',
   remind: 'rm',
   remindIn: 'ri',
   remindCustom: 'rc',
@@ -167,7 +168,7 @@ export function fieldCard(defId: string, hasOptions: boolean): InlineKeyboard {
     .text('📌 Область', `${CB.fieldRescope}:${defId}`)
     .text('🎯 Для чего', `${CB.fieldRetarget}:${defId}`)
     .row()
-    .text('🗑 Удалить поле', `${CB.fieldDelete}:${defId}`)
+    .text('🗑 Удалить поле', `${CB.confirm}:fd:${defId}`)
     .row()
     .text('⬅️ К полям', CB.fields);
 }
@@ -257,7 +258,7 @@ export function tagCard(tagId: string): InlineKeyboard {
     .text('✏️ Имя', `${CB.tagRename}:${tagId}`)
     .text('📌 Раздел', `${CB.tagRescope}:${tagId}`)
     .row()
-    .text('🗑 Удалить тег', `${CB.tagDelete}:${tagId}`)
+    .text('🗑 Удалить тег', `${CB.confirm}:tg:${tagId}`)
     .row()
     .text('⬅️ К тегам', CB.tags);
 }
@@ -423,7 +424,7 @@ export function manageMenu(items: {
   for (const note of items.notes) {
     keyboard
       .text(`${note.body ?? ''}`.slice(0, 30), `${CB.editNote}:${note.id}`)
-      .text('🗑', `${CB.deleteNote}:${note.id}`)
+      .text('🗑', `${CB.confirm}:n:${note.id}`)
       .row();
   }
 
@@ -565,7 +566,7 @@ export function cardMenu(card: EntryCard): InlineKeyboard {
 
   keyboard.text('📁 Разделы', `${CB.entryCollections}:${id}`).text('⏰ Напомнить', `${CB.remind}:${id}`).row();
 
-  return keyboard.text('🗑 Удалить', `${CB.deleteEntry}:${id}`).text('⬅️ Меню', CB.menu);
+  return keyboard.text('🗑 Удалить', `${CB.confirm}:e:${id}`).text('⬅️ Меню', CB.menu);
 }
 
 const MEDIA_ICON: Record<string, string> = {
@@ -605,7 +606,7 @@ export function attachmentMenu(attachmentId: string, entryId: string, hasItems =
   }
 
   return keyboard
-    .text('🗑 Удалить вложение', `${CB.deleteObject}:${attachmentId}`)
+    .text('🗑 Удалить вложение', `${CB.confirm}:at:${attachmentId}`)
     .row()
     .text('⬅️ К записи', `${CB.entry}:${entryId}`);
 }
@@ -638,7 +639,7 @@ export function collectionCard(collectionId: string): InlineKeyboard {
     .text('✏️ Название', `${CB.collectionRename}:${collectionId}`)
     .text('😀 Значок', `${CB.collectionIcon}:${collectionId}`)
     .row()
-    .text('🗑 Удалить раздел', `${CB.deleteCollection}:${collectionId}`)
+    .text('🗑 Удалить раздел', `${CB.confirm}:cl:${collectionId}`)
     .row()
     .text('⬅️ К разделу', `${CB.collection}:${collectionId}:0`);
 }
@@ -721,7 +722,7 @@ export function reminderCard(id: string, active: boolean, objectId: string | nul
   return keyboard
     .text(active ? '⏸ На паузу' : '▶️ Включить', `${CB.reminderPause}:${id}`)
     .row()
-    .text('🗑 Удалить', `${CB.reminderDelete}:${id}`)
+    .text('🗑 Удалить', `${CB.confirm}:rd:${id}`)
     .row()
     .text('⬅️ К напоминаниям', CB.reminders);
 }
@@ -751,4 +752,18 @@ export function entryCollectionPicker(
 
   counterPager(keyboard, `${CB.entryCollections}:${entryId}:`, chunk.page, chunk.pages);
   return keyboard.text('⬅️ Готово', `${CB.entry}:${entryId}`);
+}
+
+/**
+ * Подтверждение удаления.
+ *
+ * Кнопка «удалить» стоит рядом с обычными действиями, и промах по ней
+ * стоит слишком дорого: запись уходит вместе с полями, заметками и
+ * вложениями. Опасное действие подтверждается, безобидное — нет.
+ */
+export function confirmDelete(action: string, back: string): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('✖️ Отмена', back)
+    .row()
+    .text('🗑 Да, удалить', action);
 }

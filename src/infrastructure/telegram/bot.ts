@@ -18,6 +18,7 @@ import {
   tagsFilterMenu,
   tagsMenu,
   collectionCard,
+  confirmDelete,
   entryCollectionPicker,
   reminderCard,
   remindersMenu,
@@ -1669,6 +1670,94 @@ export function createBot(
         await app.state.set(userId, 'idle', { attachTo: arg });
         await ask(ctx, 'Пришлите или перешлите медиа — фото, видео, голосовое, документ.');
         return;
+
+      /**
+       * Подтверждение опасного удаления.
+       *
+       * Экран называет, что именно исчезнет: «удалить запись» и «удалить
+       * запись вместе с четырьмя вложениями» — разные решения.
+       */
+      case CB.confirm: {
+        if (!arg || !extra) return;
+
+        let what = '';
+        let action = '';
+        let back: string = CB.menu;
+
+        if (arg === 'e') {
+          const card = await app.card(userId, extra);
+          if (!card) return;
+
+          const parts = [
+            card.properties.length > 0 ? `полей: ${card.properties.length}` : null,
+            card.notes.length > 0 ? `заметок: ${card.notes.length}` : null,
+            card.attachments.length > 0 ? `вложений: ${card.attachments.length}` : null,
+          ].filter(Boolean);
+
+          const also = parts.length > 0 ? `Уйдёт вместе с ней: ${parts.join(', ')}.\n\n` : '';
+          what = `${header('Удалить запись?')}\n<b>${esc(card.entry.title ?? 'Без названия')}</b>\n\n${also}<i>Отменить будет нельзя.</i>`;
+          action = `${CB.deleteEntry}:${extra}`;
+          back = `${CB.entry}:${extra}`;
+        }
+
+        if (arg === 'at') {
+          const detail = await app.entries.getAttachment(userId, extra);
+          if (!detail) return;
+
+          what = `${header('Удалить вложение?')}\n<i>Отменить будет нельзя.</i>`;
+          action = `${CB.deleteObject}:${extra}`;
+          back = `${CB.attachment}:${extra}`;
+        }
+
+        if (arg === 'n') {
+          const note = await app.entries.findById(userId, extra);
+          what = `${header('Удалить заметку?')}\n${esc((note?.body ?? '').slice(0, 200))}\n\n<i>Отменить будет нельзя.</i>`;
+          action = `${CB.deleteNote}:${extra}`;
+          back = note?.parentId ? `${CB.manage}:${note.parentId}` : CB.menu;
+        }
+
+        if (arg === 'fd') {
+          const def = await app.fields.find(userId, extra);
+          if (!def) return;
+
+          // Записанные значения остаются в записях: исчезает заготовка,
+          // а не данные. Без этой оговорки удаление выглядит страшнее.
+          what = `${header('Удалить поле?')}\n<b>${esc(def.key)}</b>\n\nУже записанные значения останутся в записях — исчезнет только заготовка из справочника.\n\n<i>Отменить будет нельзя.</i>`;
+          action = `${CB.fieldDelete}:${extra}`;
+          back = `${CB.field}:${extra}`;
+        }
+
+        if (arg === 'tg') {
+          const tag = await app.tagBook.find(userId, extra);
+          if (!tag) return;
+
+          const uses = tag.uses > 0 ? `Он снимется с ${tag.uses} записей.\n\n` : '';
+          what = `${header('Удалить тег?')}\n<b>#${esc(tag.name)}</b>\n\n${uses}<i>Отменить будет нельзя.</i>`;
+          action = `${CB.tagDelete}:${extra}`;
+          back = `${CB.tagCard}:${extra}`;
+        }
+
+        if (arg === 'rd') {
+          what = `${header('Удалить напоминание?')}\n<i>Отменить будет нельзя.</i>`;
+          action = `${CB.reminderDelete}:${extra}`;
+          back = `${CB.reminder}:${extra}`;
+        }
+
+        if (arg === 'cl') {
+          const collection = await app.collections.find(userId, extra);
+          if (!collection) return;
+
+          const count = await app.collections.countEntries(userId, extra);
+          const kept = count > 0 ? `Записи не удалятся — останутся в «Недавних» и в поиске (${count}).\n\n` : '';
+          what = `${header('Удалить раздел?')}\n<b>${esc(collection.name)}</b>\n\n${kept}<i>Отменить будет нельзя.</i>`;
+          action = `${CB.deleteCollection}:${extra}:force`;
+          back = `${CB.collectionCard}:${extra}`;
+        }
+
+        if (!action) return;
+        await screen(ctx, what, confirmDelete(action, back), true);
+        return;
+      }
 
       case CB.deleteEntry:
         if (!arg) return;
