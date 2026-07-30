@@ -188,49 +188,49 @@ export function createBot(
     const fileId = detail.attachment.fileId;
     const options = { caption, parse_mode: 'HTML', reply_markup: keyboard } as const;
 
-    /**
-     * Медиа не может быть якорем: у него подпись, а не текст.
-     *
-     * Прежний экран убираем и обнуляем якорь — иначе следующий экран
-     * отредактировал бы сообщение выше картинки, и обновление ушло бы
-     * за пределы видимости.
-     */
     const userId = ctx.from?.id;
     const chatId = ctx.chat?.id;
+
+    // Прежний экран убираем: медиа станет новым.
     if (userId && chatId) {
-      const anchor = await app.users.anchor(userId);
-      if (anchor) await deleteQuietly(ctx, chatId, anchor);
-      await app.users.setAnchor(userId, null);
+      const previous = await app.users.anchor(userId);
+      if (previous) await deleteQuietly(ctx, chatId, previous);
     }
 
-    switch (detail.attachment.mediaType) {
-      case 'photo':
-        await ctx.replyWithPhoto(fileId, options);
-        return;
-      case 'video':
-        await ctx.replyWithVideo(fileId, options);
-        return;
-      case 'animation':
-        await ctx.replyWithAnimation(fileId, options);
-        return;
-      case 'voice':
-        await ctx.replyWithVoice(fileId, options);
-        return;
-      case 'audio':
-        await ctx.replyWithAudio(fileId, options);
-        return;
-      case 'document':
-        await ctx.replyWithDocument(fileId, options);
-        return;
-      case 'video_note':
-        await ctx.replyWithVideoNote(fileId);
-        await ctx.reply(caption, { ...HTML, reply_markup: keyboard });
-        return;
-      case 'sticker':
-        await ctx.replyWithSticker(fileId);
-        await ctx.reply(caption, { ...HTML, reply_markup: keyboard });
-        return;
-    }
+    const sent = await (async () => {
+      switch (detail.attachment.mediaType) {
+        case 'photo':
+          return ctx.replyWithPhoto(fileId, options);
+        case 'video':
+          return ctx.replyWithVideo(fileId, options);
+        case 'animation':
+          return ctx.replyWithAnimation(fileId, options);
+        case 'voice':
+          return ctx.replyWithVoice(fileId, options);
+        case 'audio':
+          return ctx.replyWithAudio(fileId, options);
+        case 'document':
+          return ctx.replyWithDocument(fileId, options);
+        case 'video_note':
+          // Кружок и стикер подписи не поддерживают: описание идёт
+          // отдельным сообщением, оно и становится экраном.
+          await ctx.replyWithVideoNote(fileId);
+          return ctx.reply(caption, { ...HTML, reply_markup: keyboard });
+        case 'sticker':
+          await ctx.replyWithSticker(fileId);
+          return ctx.reply(caption, { ...HTML, reply_markup: keyboard });
+      }
+    })();
+
+    /**
+     * Медиа становится якорем, хотя редактировать его нельзя.
+     *
+     * Это и нужно: следующий экран попробует его исправить, получит отказ
+     * и по уже написанному запасному пути удалит сообщение и отправит
+     * новое. Так картинка исчезает при уходе с экрана, и отдельный учёт
+     * медиа-сообщений не нужен.
+     */
+    if (userId && sent) await app.users.setAnchor(userId, sent.message_id);
   }
 
   /**
