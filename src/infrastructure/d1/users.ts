@@ -17,4 +17,21 @@ export class UserRepository {
       .bind(id, username, firstName, nowIso())
       .run();
   }
+
+  /** Идентификатор экрана, который бот переписывает вместо новых сообщений. */
+  async anchor(userId: number): Promise<number | null> {
+    const row = await this.db
+      .prepare(`SELECT anchor_msg_id FROM users WHERE id = ?1`)
+      .bind(userId)
+      .first<{ anchor_msg_id: number | null }>();
+
+    return row?.anchor_msg_id ?? null;
+  }
+
+  async setAnchor(userId: number, messageId: number | null): Promise<void> {
+    await this.db
+      .prepare(`UPDATE users SET anchor_msg_id = ?2 WHERE id = ?1`)
+      .bind(userId, messageId)
+      .run();
+  }
 }

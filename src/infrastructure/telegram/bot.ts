@@ -82,22 +82,62 @@ export function createBot(
     ctx: Context,
     text: string,
     keyboard: InlineKeyboard,
-    edit: boolean,
+    _edit = true,
   ): Promise<void> {
-    const message = ctx.callbackQuery?.message;
-    const hasText = typeof (message as { text?: unknown } | undefined)?.text === 'string';
+    const userId = ctx.from?.id;
+    const chatId = ctx.chat?.id ?? userId;
+    if (!userId || !chatId) return;
 
-    if (edit && hasText) {
+    const anchor = await app.users.anchor(userId);
+
+    if (anchor) {
       try {
-        await ctx.editMessageText(text, { ...HTML, reply_markup: keyboard });
+        await ctx.api.editMessageText(chatId, anchor, text, { ...HTML, reply_markup: keyboard });
         return;
       } catch (error) {
+        // «not modified» — содержимое уже такое, какое нужно.
         if (String(error).includes('not modified')) return;
-        // Любая другая причина — падать нельзя, показываем новым сообщением.
+
+        // Экран мог стать неправимым: под ним медиа, он старше двух суток
+        // или удалён руками. Тогда заводим новый, а прежний убираем.
+        await deleteQuietly(ctx, chatId, anchor);
       }
     }
 
-    await ctx.reply(text, { ...HTML, reply_markup: keyboard });
+    const sent = await ctx.api.sendMessage(chatId, text, { ...HTML, reply_markup: keyboard });
+    await app.users.setAnchor(userId, sent.message_id);
+  }
+
+  /** Короткое уведомление в якоре: с выходом в меню, чтобы не было тупика. */
+  async function notice(ctx: Context, text: string): Promise<void> {
+    await screen(ctx, text, new InlineKeyboard().text('⬅️ Меню', CB.menu));
+  }
+
+  /** Приглашение к вводу — в том же экране, а не отдельным сообщением. */
+  async function ask(ctx: Context, text: string): Promise<void> {
+    await screen(ctx, text, cancelOnly());
+  }
+
+  /** Удаление, которому не жалко провалиться: сообщение могли убрать раньше. */
+  async function deleteQuietly(ctx: Context, chatId: number, messageId: number): Promise<void> {
+    try {
+      await ctx.api.deleteMessage(chatId, messageId);
+    } catch {
+      // Старше 48 часов или уже удалено — не повод ломать сценарий.
+    }
+  }
+
+  /**
+   * Убирает сообщение пользователя.
+   *
+   * Иначе чат всё равно растёт: ответы мастеру («Озвучка», «AniStar»)
+   * копятся между экранами. Введённое сразу видно в карточке, поэтому
+   * текст не теряется — он переезжает туда, где ему место.
+   */
+  async function consume(ctx: Context): Promise<void> {
+    const chatId = ctx.chat?.id;
+    const messageId = ctx.message?.message_id;
+    if (chatId && messageId) await deleteQuietly(ctx, chatId, messageId);
   }
 
   /** Все ветки заканчиваются главным меню — из любого места есть путь назад. */
@@ -119,7 +159,7 @@ export function createBot(
   async function showCard(ctx: Context, userId: number, entryId: string, edit = false): Promise<void> {
     const card = await app.card(userId, entryId);
     if (!card) {
-      await ctx.reply('Запись не найдена — возможно, она удалена.');
+      await notice(ctx, 'Запись не найдена — возможно, она удалена.');
       return;
     }
 
@@ -145,6 +185,21 @@ export function createBot(
     const keyboard = attachmentMenu(detail.object.id, detail.object.parentId ?? '', hasItems);
     const fileId = detail.attachment.fileId;
     const options = { caption, parse_mode: 'HTML', reply_markup: keyboard } as const;
+
+    /**
+     * Медиа не может быть якорем: у него подпись, а не текст.
+     *
+     * Прежний экран убираем и обнуляем якорь — иначе следующий экран
+     * отредактировал бы сообщение выше картинки, и обновление ушло бы
+     * за пределы видимости.
+     */
+    const userId = ctx.from?.id;
+    const chatId = ctx.chat?.id;
+    if (userId && chatId) {
+      const anchor = await app.users.anchor(userId);
+      if (anchor) await deleteQuietly(ctx, chatId, anchor);
+      await app.users.setAnchor(userId, null);
+    }
 
     switch (detail.attachment.mediaType) {
       case 'photo':
@@ -187,7 +242,7 @@ export function createBot(
   async function showObject(ctx: Context, userId: number, objectId: string): Promise<void> {
     const object = await app.entries.findById(userId, objectId);
     if (!object) {
-      await ctx.reply('Объект не найден — возможно, он удалён.');
+      await notice(ctx, 'Объект не найден — возможно, он удалён.');
       return;
     }
 
@@ -241,7 +296,7 @@ export function createBot(
     // Первый тег брать неоткуда — сразу просим ввести.
     if (tags.length === 0) {
       await app.state.set(userId, 'tag:name', { objectId });
-      await ctx.reply('Тегов пока нет. Введите первый — можно несколько через запятую.', ASK);
+      await ask(ctx, 'Тегов пока нет. Введите первый — можно несколько через запятую.');
       return;
     }
 
@@ -325,7 +380,7 @@ export function createBot(
     }
 
     await app.state.set(userId, 'property:value', { objectId, key, defId: defId ?? '' });
-    await ctx.reply(`Значение для «${esc(key)}»?`, ASK);
+    await ask(ctx, `Значение для «${esc(key)}»?`);
   }
 
   /** Справочник полей: сортировка, фильтр и листалка запоминаются. */
@@ -355,7 +410,7 @@ export function createBot(
   async function showField(ctx: Context, userId: number, defId: string, edit: boolean): Promise<void> {
     const def = await app.fields.find(userId, defId);
     if (!def) {
-      await ctx.reply('Поле не найдено.');
+      await notice(ctx, 'Поле не найдено.');
       return;
     }
 
@@ -402,7 +457,7 @@ export function createBot(
   async function showTagCard(ctx: Context, userId: number, tagId: string, edit: boolean): Promise<void> {
     const tag = await app.tagBook.find(userId, tagId);
     if (!tag) {
-      await ctx.reply('Тег не найден.');
+      await notice(ctx, 'Тег не найден.');
       return;
     }
 
@@ -461,9 +516,8 @@ export function createBot(
 
     if (keys.length === 0) {
       await app.state.set(userId, 'property:key', { objectId });
-      await ctx.reply(
+      await ask(ctx, 
         'Название поля?\n\nНапример: <code>Озвучка</code>, <code>Оценка</code>, <code>Начал</code>',
-        ASK,
       );
       return;
     }
@@ -498,7 +552,7 @@ export function createBot(
   async function showManage(ctx: Context, userId: number, objectId: string, edit: boolean): Promise<void> {
     const items = await app.entries.getRemovable(userId, objectId);
     if (!items) {
-      await ctx.reply('Объект не найден.');
+      await notice(ctx, 'Объект не найден.');
       return;
     }
 
@@ -570,7 +624,7 @@ export function createBot(
 
     if (!title) {
       await app.state.clear(userId);
-      await ctx.reply('Мастер устарел — начните заново.');
+      await notice(ctx, 'Мастер устарел — начните заново.');
       await showMenu(ctx, userId);
       return;
     }
@@ -600,11 +654,10 @@ export function createBot(
     if (offset !== null) return true;
 
     await app.state.set(userId, 'timezone', pending);
-    await ctx.reply(
+    await ask(ctx, 
       'Сначала часовой пояс — иначе «в 9 утра» будет лотереей.\n\n' +
         'Напишите смещение от UTC: <code>+3</code>, <code>+2</code>, <code>-5</code>.\n' +
         'В Киеве и Москве это <code>+3</code>.',
-      ASK,
     );
     return false;
   }
@@ -636,7 +689,7 @@ export function createBot(
     ]);
 
     if (!reminder) {
-      await ctx.reply('Напоминание не найдено.');
+      await notice(ctx, 'Напоминание не найдено.');
       return;
     }
 
@@ -663,9 +716,10 @@ export function createBot(
     const id = await app.reminders.create(userId, objectId, null, new Date(at).toISOString(), rule);
 
     await app.state.clear(userId);
-    await ctx.reply(
+    await screen(
+      ctx,
       `⏰ Напомню: <b>${esc(describeSchedule(new Date(at).toISOString(), rule, offset))}</b>`,
-      { ...HTML, reply_markup: reminderCard(id, true, objectId) },
+      reminderCard(id, true, objectId),
     );
   }
 
@@ -676,6 +730,8 @@ export function createBot(
   bot.command('start', async (ctx) => {
     const userId = userIdOf(ctx);
     if (!userId) return;
+
+    await consume(ctx);
 
     // Регистрируем команды прямо отсюда: иначе кнопка «/» рядом с полем
     // ввода не появится, а это единственное место, где пользователь
@@ -701,12 +757,13 @@ export function createBot(
     const userId = userIdOf(ctx);
     if (!userId) return;
 
+    await consume(ctx);
+
     const query = ctx.match.trim();
     if (!query) {
       await app.state.set(userId, 'search:query');
-      await ctx.reply(
+      await ask(ctx, 
         'Что ищем?\n\nМожно с фильтрами: <code>раздел:донхуа оценка&gt;=9 tag:любимое has:фото</code>',
-        ASK,
       );
       return;
     }
@@ -715,7 +772,7 @@ export function createBot(
   });
 
   bot.command('help', async (ctx) => {
-    await ctx.reply(
+    await notice(ctx, 
       '<b>Как пользоваться</b>\n\n' +
         '<b>Сохранить.</b> Перешлите боту фото, голосовое, видео или текст — он спросит раздел, и запись готова.\n\n' +
         '<b>Найти.</b> Просто напишите, что ищете. Поиск смотрит везде: в названиях, полях, тегах, заметках и подписях к медиа — в том числе у вложений.\n\n' +
@@ -728,7 +785,6 @@ export function createBot(
         'Например: <code>раздел:донхуа оценка&gt;=9 tag:любимое небеса</code>\n\n' +
         '<b>Поля</b> печатайте как удобно — тип определится сам: <code>9.8</code> число, ' +
         '<code>01.07.2026</code> дата, <code>12:34</code> тайминг, <code>да</code> флажок.',
-      HTML,
     );
   });
 
@@ -736,14 +792,17 @@ export function createBot(
     const userId = userIdOf(ctx);
     if (!userId) return;
 
+    await consume(ctx);
+
+    await consume(ctx);
+
     const offset = await app.reminders.timezone(userId);
     await app.state.set(userId, 'timezone');
-    await ctx.reply(
+    await ask(ctx, 
       `Часовой пояс${offset !== null ? ` сейчас: UTC${offset >= 0 ? '+' : ''}${offset / 60}` : ' не задан'}.
 
 ` +
         'Напишите смещение от UTC: <code>+3</code>, <code>-5</code>, <code>+5:30</code>.',
-      ASK,
     );
   });
 
@@ -751,8 +810,9 @@ export function createBot(
     const userId = userIdOf(ctx);
     if (!userId) return;
 
+    await consume(ctx);
+
     await app.state.clear(userId);
-    await ctx.reply('Отменено.');
     await showMenu(ctx, userId);
   });
 
@@ -785,7 +845,7 @@ export function createBot(
         // присланного медиа, и терять его нельзя.
         const dialog = await app.state.get(userId);
         await app.state.set(userId, 'collection:name', dialog.payload);
-        await ctx.reply('Название раздела?\n\nМожно с эмодзи в начале: <code>📺 Донхуа</code>', ASK);
+        await ask(ctx, 'Название раздела?\n\nМожно с эмодзи в начале: <code>📺 Донхуа</code>');
         return;
       }
 
@@ -794,10 +854,10 @@ export function createBot(
         if (collections.length === 0) {
           const dialog = await app.state.get(userId);
           await app.state.set(userId, 'collection:name', dialog.payload);
-          await ctx.reply('Сначала создайте раздел. Как его назвать?\n\nНапример: <code>📺 Донхуа</code>', ASK);
+          await ask(ctx, 'Сначала создайте раздел. Как его назвать?\n\nНапример: <code>📺 Донхуа</code>');
           return;
         }
-        await ctx.reply('В какой раздел?', { reply_markup: collectionPicker(collections) });
+        await screen(ctx, 'В какой раздел?', collectionPicker(collections));
         return;
       }
 
@@ -807,11 +867,11 @@ export function createBot(
           // Пользователь просил запись, а не раздел. Помечаем намерение,
           // чтобы после создания раздела вернуться к нему, а не в меню.
           await app.state.set(userId, 'collection:name', { then: 'entry' });
-          await ctx.reply('Сначала создайте раздел. Как его назвать?\n\nНапример: <code>📺 Донхуа</code>', ASK);
+          await ask(ctx, 'Сначала создайте раздел. Как его назвать?\n\nНапример: <code>📺 Донхуа</code>');
           return;
         }
         await app.state.set(userId, 'entry:title');
-        await ctx.reply('Название записи?', ASK);
+        await ask(ctx, 'Название записи?');
         return;
       }
 
@@ -825,7 +885,7 @@ export function createBot(
         const dialog = await app.state.get(userId);
         const query = dialog.payload.lastQuery;
         if (!query) {
-          await ctx.reply('Запрос утерян — повторите поиск.');
+          await notice(ctx, 'Запрос утерян — повторите поиск.');
           return;
         }
         await showSearch(ctx, userId, query, Number(arg ?? '0'), true);
@@ -834,10 +894,9 @@ export function createBot(
 
       case CB.search:
         await app.state.set(userId, 'search:query');
-        await ctx.reply(
+        await ask(ctx, 
           'Что ищем?\n\nСвободный текст ищет везде — в названиях, свойствах, заметках и подписях к медиа.\n' +
             'Фильтры: <code>раздел:донхуа</code> <code>оценка&gt;=9</code> <code>tag:любимое</code> <code>has:фото</code>',
-          ASK,
         );
         return;
 
@@ -899,7 +958,7 @@ export function createBot(
         if (!arg) return;
         const detail = await app.entries.getAttachment(userId, arg);
         if (!detail) {
-          await ctx.reply('Вложение не найдено.');
+          await notice(ctx, 'Вложение не найдено.');
           return;
         }
 
@@ -917,7 +976,7 @@ export function createBot(
         if (!arg) return;
         const property = await app.entries.findProperty(userId, arg);
         if (!property) {
-          await ctx.reply('Поле не найдено.');
+          await notice(ctx, 'Поле не найдено.');
           return;
         }
 
@@ -934,7 +993,7 @@ export function createBot(
       case CB.editNote: {
         if (!arg) return;
         await app.state.set(userId, 'note:edit', { noteId: arg });
-        await ctx.reply('Новый текст заметки?', ASK);
+        await ask(ctx, 'Новый текст заметки?');
         return;
       }
 
@@ -950,7 +1009,7 @@ export function createBot(
         const dialog = await app.state.get(userId);
         const objectId = dialog.payload.manage;
         if (!objectId) {
-          await ctx.reply('Экран устарел — откройте запись заново.');
+          await notice(ctx, 'Экран устарел — откройте запись заново.');
           return;
         }
         await app.removeTag(userId, objectId, arg);
@@ -1004,7 +1063,7 @@ export function createBot(
         const dialog = await app.state.get(userId);
         const entryId = dialog.payload.target;
         if (!entryId) {
-          await ctx.reply('Экран устарел — откройте запись заново.');
+          await notice(ctx, 'Экран устарел — откройте запись заново.');
           return;
         }
 
@@ -1054,11 +1113,10 @@ export function createBot(
       case CB.remindCustom: {
         if (!arg) return;
         await app.state.set(userId, 'reminder:when', { objectId: arg });
-        await ctx.reply(
+        await ask(ctx, 
           'Когда напомнить? Напишите как удобно:\n\n' +
             '<code>через 40 минут</code> · <code>завтра в 9</code>\n' +
             '<code>05.08 в 18:30</code> · <code>каждые 3 дня</code>',
-          ASK,
         );
         return;
       }
@@ -1090,27 +1148,27 @@ export function createBot(
       case CB.reminderText:
         if (!arg) return;
         await app.state.set(userId, 'reminder:text', { reminderId: arg });
-        await ctx.reply('Что приписать к напоминанию?', ASK);
+        await ask(ctx, 'Что приписать к напоминанию?');
         return;
 
       case CB.reminderWhen:
         if (!arg) return;
         await app.state.set(userId, 'reminder:when', { reminderId: arg });
-        await ctx.reply('Когда напоминать? Например: <code>завтра в 9</code>', ASK);
+        await ask(ctx, 'Когда напоминать? Например: <code>завтра в 9</code>');
         return;
 
       // Кнопки под самим уведомлением.
       case CB.reminderSnooze: {
         if (!arg) return;
         await app.reminders.reschedule(userId, arg, new Date(Date.now() + 60 * 60_000).toISOString());
-        await ctx.reply('😴 Напомню через час.');
+        await notice(ctx, '😴 Напомню через час.');
         return;
       }
 
       case CB.reminderOff:
         if (!arg) return;
         await app.reminders.setActive(userId, arg, false);
-        await ctx.reply('Больше не напомню. Включить можно в «⏰ Напоминания».');
+        await notice(ctx, 'Больше не напомню. Включить можно в «⏰ Напоминания».');
         return;
 
       case CB.noop:
@@ -1139,13 +1197,13 @@ export function createBot(
       case CB.collectionRename:
         if (!arg) return;
         await app.state.set(userId, 'collection:rename', { collectionId: arg });
-        await ctx.reply('Новое название раздела?', ASK);
+        await ask(ctx, 'Новое название раздела?');
         return;
 
       case CB.collectionIcon:
         if (!arg) return;
         await app.state.set(userId, 'collection:icon', { collectionId: arg });
-        await ctx.reply('Пришлите эмодзи для раздела.\n\nИли напишите <code>убрать</code>, чтобы вернуть стандартный.', ASK);
+        await ask(ctx, 'Пришлите эмодзи для раздела.\n\nИли напишите <code>убрать</code>, чтобы вернуть стандартный.');
         return;
 
       case CB.tags:
@@ -1182,13 +1240,13 @@ export function createBot(
 
       case CB.tagNew:
         await app.state.set(userId, 'tag:new');
-        await ctx.reply('Название тега?', ASK);
+        await ask(ctx, 'Название тега?');
         return;
 
       case CB.tagRename:
         if (!arg) return;
         await app.state.set(userId, 'tag:rename', { tagId: arg });
-        await ctx.reply('Новое название тега?', ASK);
+        await ask(ctx, 'Новое название тега?');
         return;
 
       case CB.tagRescope: {
@@ -1246,7 +1304,7 @@ export function createBot(
 
       case CB.fieldNew:
         await app.state.set(userId, 'field:key');
-        await ctx.reply('Название поля?\n\nНапример: <code>Статус</code>', ASK);
+        await ask(ctx, 'Название поля?\n\nНапример: <code>Статус</code>');
         return;
 
       case CB.fieldType: {
@@ -1257,14 +1315,14 @@ export function createBot(
           const type = arg === 'auto' ? null : ((arg ?? null) as PropertyType | null);
           const conflict = await app.fields.setType(userId, dialog.payload.defId, type);
           if (conflict) {
-            await ctx.reply(conflict);
+            await notice(ctx, conflict);
             return;
           }
 
           // Старые значения не переписываем — предупреждаем честно.
           const stale = type ? await app.fields.countMismatched(userId, dialog.payload.defId, type) : 0;
           if (stale > 0) {
-            await ctx.reply(
+            await notice(ctx, 
               `Тип изменён. ${stale} уже записанных значений остались прежнего типа — ` +
                 `проверка касается только нового ввода, а сравнения в поиске их не увидят.`,
             );
@@ -1295,7 +1353,7 @@ export function createBot(
             arg === 'global' ? null : (arg ?? null),
           );
           if (conflict) {
-            await ctx.reply(conflict);
+            await notice(ctx, conflict);
             return;
           }
           await showField(ctx, userId, dialog.payload.defId, true);
@@ -1314,9 +1372,10 @@ export function createBot(
         );
 
         await app.state.set(userId, 'field:options', { defId });
-        await ctx.reply(
+        await screen(
+          ctx,
           'Значения списком, через запятую?\n\nНапример: <code>смотрю, досмотрено, брошено</code>\n\nИли пропустите — тогда значение вводится вручную.',
-          { ...HTML, reply_markup: new InlineKeyboard().text('Пропустить', `${CB.field}:${defId}`) },
+          new InlineKeyboard().text('Пропустить', `${CB.field}:${defId}`),
         );
         return;
       }
@@ -1324,7 +1383,7 @@ export function createBot(
       case CB.fieldAddOption:
         if (!arg) return;
         await app.state.set(userId, 'field:options', { defId: arg });
-        await ctx.reply('Значения через запятую?', ASK);
+        await ask(ctx, 'Значения через запятую?');
         return;
 
       case CB.fieldDelete:
@@ -1336,7 +1395,7 @@ export function createBot(
       case CB.fieldRename:
         if (!arg) return;
         await app.state.set(userId, 'field:rename', { defId: arg });
-        await ctx.reply('Новое название поля?', ASK);
+        await ask(ctx, 'Новое название поля?');
         return;
 
       case CB.fieldRetype: {
@@ -1369,7 +1428,7 @@ export function createBot(
 
         const conflict = await app.fields.setTarget(userId, defId, arg as 'entry' | 'attachment' | 'any');
         if (conflict) {
-          await ctx.reply(conflict);
+          await notice(ctx, conflict);
           return;
         }
         await showField(ctx, userId, defId, true);
@@ -1389,14 +1448,14 @@ export function createBot(
       case CB.renameAttachment:
         if (!arg) return;
         await app.state.set(userId, 'attachment:rename', { attachmentId: arg });
-        await ctx.reply('Новое название вложения?', ASK);
+        await ask(ctx, 'Новое название вложения?');
         return;
 
       case CB.renameOption: {
         if (!arg) return;
         const dialog = await app.state.get(userId);
         await app.state.set(userId, 'option:rename', { optionId: arg, defId: dialog.payload.defId ?? '' });
-        await ctx.reply('Новое название значения?', ASK);
+        await ask(ctx, 'Новое название значения?');
         return;
       }
 
@@ -1416,7 +1475,7 @@ export function createBot(
       case CB.tagPage: {
         const dialog = await app.state.get(userId);
         if (!dialog.payload.target) {
-          await ctx.reply('Экран устарел — откройте запись заново.');
+          await notice(ctx, 'Экран устарел — откройте запись заново.');
           return;
         }
         await showTagPicker(ctx, userId, dialog.payload.target, true, Number(arg ?? '0'));
@@ -1426,7 +1485,7 @@ export function createBot(
       case CB.keyPage: {
         const dialog = await app.state.get(userId);
         if (!dialog.payload.target) {
-          await ctx.reply('Экран устарел — откройте запись заново.');
+          await notice(ctx, 'Экран устарел — откройте запись заново.');
           return;
         }
         await showKeyPicker(ctx, userId, dialog.payload.target, true, Number(arg ?? '0'));
@@ -1438,7 +1497,7 @@ export function createBot(
         const dialog = await app.state.get(userId);
         const objectId = dialog.payload.target;
         if (!objectId) {
-          await ctx.reply('Экран устарел — откройте запись заново.');
+          await notice(ctx, 'Экран устарел — откройте запись заново.');
           return;
         }
 
@@ -1459,14 +1518,14 @@ export function createBot(
       case CB.newTag:
         if (!arg) return;
         await app.state.set(userId, 'tag:name', { objectId: arg });
-        await ctx.reply('Тег? Можно несколько через запятую.', ASK);
+        await ask(ctx, 'Тег? Можно несколько через запятую.');
         return;
 
       case CB.pickKey: {
         const dialog = await app.state.get(userId);
         const objectId = dialog.payload.target;
         if (!objectId || !dialog.payload.keys) {
-          await ctx.reply('Экран устарел — откройте запись заново.');
+          await notice(ctx, 'Экран устарел — откройте запись заново.');
           return;
         }
 
@@ -1479,7 +1538,7 @@ export function createBot(
 
         const pick = picks[Number(arg ?? '-1')];
         if (!pick) {
-          await ctx.reply('Поле не найдено — попробуйте ещё раз.');
+          await notice(ctx, 'Поле не найдено — попробуйте ещё раз.');
           return;
         }
 
@@ -1532,35 +1591,34 @@ export function createBot(
           key,
           defId: dialog.payload.defId ?? '',
         });
-        await ctx.reply(`Значение для «${esc(key)}»?`, ASK);
+        await ask(ctx, `Значение для «${esc(key)}»?`);
         return;
       }
 
       case CB.newKey:
         if (!arg) return;
         await app.state.set(userId, 'property:key', { objectId: arg });
-        await ctx.reply(
+        await ask(ctx, 
           'Название поля?\n\nНапример: <code>Озвучка</code>, <code>Оценка</code>, <code>Начал</code>',
-          ASK,
         );
         return;
 
       case CB.addNote:
         if (!arg) return;
         await app.state.set(userId, 'note:text', { objectId: arg });
-        await ctx.reply('Текст заметки или цитаты?', ASK);
+        await ask(ctx, 'Текст заметки или цитаты?');
         return;
 
       case CB.addMedia:
         if (!arg) return;
         await app.state.set(userId, 'idle', { attachTo: arg });
-        await ctx.reply('Пришлите или перешлите медиа — фото, видео, голосовое, документ.', ASK);
+        await ask(ctx, 'Пришлите или перешлите медиа — фото, видео, голосовое, документ.');
         return;
 
       case CB.deleteEntry:
         if (!arg) return;
         await app.entries.delete(userId, arg);
-        await ctx.reply('Запись удалена.');
+        await notice(ctx, 'Запись удалена.');
         await showMenu(ctx, userId);
         return;
     }
@@ -1580,6 +1638,9 @@ export function createBot(
 
       const media = extractMedia(ctx.message);
       if (!media) return;
+
+      // Присланное медиа уже сохранено у нас — в чате оно лишнее.
+      await consume(ctx);
 
       /**
        * Расшифровка речи. Делаем до сохранения, чтобы текст попал в индекс
@@ -1647,7 +1708,7 @@ export function createBot(
 
         const shown = parsed?.intent === 'search' ? describeQuery(parsed.query, speech) : query;
         const sites = await app.sitesFor(userId, hits.items, parsed?.query ?? parseQuery(query));
-        await ctx.reply(renderHits(hits, shown, sites), { ...HTML, reply_markup: keyboard });
+        await screen(ctx, renderHits(hits, shown, sites), keyboard);
         return;
       }
 
@@ -1655,15 +1716,12 @@ export function createBot(
 
       if (collections.length === 0) {
         await app.state.set(userId, 'collection:name', pending);
-        await ctx.reply('Сохраню. Сначала создайте раздел — как его назвать?\n\nНапример: <code>📺 Донхуа</code>', HTML);
+        await notice(ctx, 'Сохраню. Сначала создайте раздел — как его назвать?\n\nНапример: <code>📺 Донхуа</code>');
         return;
       }
 
       await app.state.set(userId, 'entry:collection', pending);
-      await ctx.reply(`Сохранить как <b>${esc(pending.title)}</b>?\n\nВ какой раздел?`, {
-        ...HTML,
-        reply_markup: collectionPicker(collections),
-      });
+      await screen(ctx, `Сохранить как <b>${esc(pending.title)}</b>?\n\nВ какой раздел?`, collectionPicker(collections));
     },
   );
 
@@ -1680,6 +1738,10 @@ export function createBot(
     const input = ctx.message.text.trim();
     const dialog = await app.state.get(userId);
 
+    // Ответ мастеру не должен оставаться в чате: введённое сразу видно
+    // в карточке, а сообщение только копится.
+    await consume(ctx);
+
     switch (dialog.state) {
       case 'collection:name': {
         // Ведущее эмодзи становится иконкой раздела.
@@ -1690,12 +1752,12 @@ export function createBot(
         const problem = NoteKeeper.validateName(name);
         if (problem) {
           // Состояние не сбрасываем: человек просто вводит заново.
-          await ctx.reply(`${problem}\n\nВведите название раздела ещё раз.`);
+          await notice(ctx, `${problem}\n\nВведите название раздела ещё раз.`);
           return;
         }
 
         const collection = await app.createCollection(userId, name, icon);
-        await ctx.reply(`Раздел ${collection.icon ?? '📁'} <b>${esc(collection.name)}</b> создан.`, HTML);
+        await notice(ctx, `Раздел ${collection.icon ?? '📁'} <b>${esc(collection.name)}</b> создан.`);
 
         // Раздел мог создаваться посреди сохранения — тогда доводим до конца.
         if (dialog.payload.title) {
@@ -1706,7 +1768,7 @@ export function createBot(
         // …или посреди создания записи: возвращаемся к тому, что просили.
         if (dialog.payload.then === 'entry') {
           await app.state.set(userId, 'entry:title');
-          await ctx.reply('Название записи?', ASK);
+          await ask(ctx, 'Название записи?');
           return;
         }
 
@@ -1718,13 +1780,13 @@ export function createBot(
       case 'entry:title': {
         const collections = await app.collections.list(userId);
         await app.state.set(userId, 'entry:collection', { title: input });
-        await ctx.reply('В какой раздел?', { reply_markup: collectionPicker(collections) });
+        await screen(ctx, 'В какой раздел?', collectionPicker(collections));
         return;
       }
 
       case 'property:key':
         await app.state.set(userId, 'property:value', { ...dialog.payload, key: input });
-        await ctx.reply(`Значение для «${esc(input)}»?`, ASK);
+        await ask(ctx, `Значение для «${esc(input)}»?`);
         return;
 
       case 'property:value': {
@@ -1732,7 +1794,7 @@ export function createBot(
         const key = dialog.payload.key;
         if (!objectId || !key) {
           await app.state.clear(userId);
-          await ctx.reply('Мастер устарел — начните заново.');
+          await notice(ctx, 'Мастер устарел — начните заново.');
           return;
         }
         // Тип известен только у полей справочника — иначе как раньше,
@@ -1742,7 +1804,7 @@ export function createBot(
 
         if (problem) {
           // Состояние не трогаем: человек вводит заново, ничего не теряя.
-          await ctx.reply(`${problem}\n\nВведите значение ещё раз.`, ASK);
+          await ask(ctx, `${problem}\n\nВведите значение ещё раз.`);
           return;
         }
 
@@ -1775,14 +1837,15 @@ export function createBot(
       case 'field:key': {
         const problem = NoteKeeper.validateName(input);
         if (problem) {
-          await ctx.reply(`${problem}\n\nВведите название поля ещё раз.`, ASK);
+          await ask(ctx, `${problem}\n\nВведите название поля ещё раз.`);
           return;
         }
 
         await app.state.set(userId, 'field:type', { key: input });
-        await ctx.reply(
+        await screen(
+          ctx,
           `Тип значения для «${esc(input)}»?\n\nОт типа зависит проверка ввода и сравнения в поиске.`,
-          { ...HTML, reply_markup: typePicker() },
+          typePicker(),
         );
         return;
       }
@@ -1790,7 +1853,7 @@ export function createBot(
       case 'timezone': {
         const match = /^([+-]?\d{1,2})(?:[:.](\d{2}))?$/.exec(input.replace(/\s+/gu, ''));
         if (!match) {
-          await ctx.reply('Нужно смещение от UTC: +3, -5, +5:30', ASK);
+          await ask(ctx, 'Нужно смещение от UTC: +3, -5, +5:30');
           return;
         }
 
@@ -1815,7 +1878,7 @@ export function createBot(
         }
 
         await app.state.clear(userId);
-        await ctx.reply(`Часовой пояс сохранён: UTC${hours >= 0 ? '+' : ''}${hours}`);
+        await notice(ctx, `Часовой пояс сохранён: UTC${hours >= 0 ? '+' : ''}${hours}`);
         return;
       }
 
@@ -1831,9 +1894,9 @@ export function createBot(
         const schedule = parseSchedule(input, Date.now(), offset);
 
         if (!schedule) {
-          await ctx.reply(
+          await ask(
+            ctx,
             'Не понял время. Попробуйте так: «через 40 минут», «завтра в 9», «05.08 в 18:30», «каждые 3 дня».',
-            ASK,
           );
           return;
         }
@@ -1889,22 +1952,19 @@ export function createBot(
 
         const problem = NoteKeeper.validateName(input);
         if (problem) {
-          await ctx.reply(`${problem}\n\nВведите название ещё раз.`, ASK);
+          await ask(ctx, `${problem}\n\nВведите название ещё раз.`);
           return;
         }
 
         const conflict = await app.collections.rename(userId, collectionId, input);
         if (conflict) {
-          await ctx.reply(`${conflict}\n\nВведите другое название.`, ASK);
+          await ask(ctx, `${conflict}\n\nВведите другое название.`);
           return;
         }
 
         await app.state.clear(userId);
         const page = await app.byCollection(userId, collectionId, 0);
-        await ctx.reply(renderList(page, 'Раздел переименован'), {
-          ...HTML,
-          reply_markup: entryList(page, `${CB.collection}:${collectionId}:`, collectionId),
-        });
+        await screen(ctx, renderList(page, 'Раздел переименован'), entryList(page, `${CB.collection}:${collectionId}:`, collectionId));
         return;
       }
 
@@ -1914,24 +1974,21 @@ export function createBot(
 
         const icon = /^убрать$/i.test(input) ? null : /^\p{Extended_Pictographic}️?$/u.exec(input)?.[0];
         if (icon === undefined) {
-          await ctx.reply('Нужен один эмодзи или слово «убрать».', ASK);
+          await ask(ctx, 'Нужен один эмодзи или слово «убрать».');
           return;
         }
 
         await app.collections.setIcon(userId, collectionId, icon);
         await app.state.clear(userId);
         const collection = await app.collections.find(userId, collectionId);
-        await ctx.reply(`Значок обновлён: ${collection?.icon ?? '📁'} <b>${esc(collection?.name ?? '')}</b>`, {
-          ...HTML,
-          reply_markup: collectionCard(collectionId),
-        });
+        await screen(ctx, `Значок обновлён: ${collection?.icon ?? '📁'} <b>${esc(collection?.name ?? '')}</b>`, collectionCard(collectionId));
         return;
       }
 
       case 'tag:new': {
         const problem = NoteKeeper.validateName(input);
         if (problem) {
-          await ctx.reply(`${problem}\n\nВведите название тега ещё раз.`, ASK);
+          await ask(ctx, `${problem}\n\nВведите название тега ещё раз.`);
           return;
         }
 
@@ -1947,13 +2004,13 @@ export function createBot(
 
         const problem = NoteKeeper.validateName(input);
         if (problem) {
-          await ctx.reply(`${problem}\n\nВведите название ещё раз.`, ASK);
+          await ask(ctx, `${problem}\n\nВведите название ещё раз.`);
           return;
         }
 
         const conflict = await app.tagBook.rename(userId, tagId, input.replace(/^#/, ''));
         if (conflict) {
-          await ctx.reply(`${conflict}\n\nВведите другое название.`, ASK);
+          await ask(ctx, `${conflict}\n\nВведите другое название.`);
           return;
         }
 
@@ -1970,13 +2027,13 @@ export function createBot(
 
         const problem = NoteKeeper.validateName(input);
         if (problem) {
-          await ctx.reply(`${problem}\n\nВведите название ещё раз.`, ASK);
+          await ask(ctx, `${problem}\n\nВведите название ещё раз.`);
           return;
         }
 
         const conflict = await app.fields.rename(userId, defId, input);
         if (conflict) {
-          await ctx.reply(`${conflict}\n\nВведите другое название.`, ASK);
+          await ask(ctx, `${conflict}\n\nВведите другое название.`);
           return;
         }
 
@@ -1992,7 +2049,7 @@ export function createBot(
         const { defId, problem } = await app.fields.renameOption(userId, optionId, input);
         if (problem) {
           // Мастер оставляем открытым — ввод не теряется.
-          await ctx.reply(`${problem}\n\nВведите другое название.`, ASK);
+          await ask(ctx, `${problem}\n\nВведите другое название.`);
           return;
         }
 
