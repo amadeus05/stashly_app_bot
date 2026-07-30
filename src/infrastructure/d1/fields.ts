@@ -74,7 +74,7 @@ export class FieldRepository {
     const direction = sort === 'desc' ? 'DESC' : 'ASC';
 
     const statement = this.db.prepare(
-      `${SELECT_DEF} WHERE f.user_id = ?1 ${scope} ORDER BY f.key COLLATE NOCASE ${direction}`,
+      `${SELECT_DEF} WHERE f.user_id = ?1 ${scope} ORDER BY c.name IS NULL DESC, c.name COLLATE NOCASE, f.key COLLATE NOCASE ${direction}`,
     );
 
     const bound =

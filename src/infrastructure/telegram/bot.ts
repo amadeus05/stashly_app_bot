@@ -22,6 +22,7 @@ import {
   reminderCard,
   remindersMenu,
   whenPicker,
+  PICKER_PAGE,
   fieldsMenu,
   scopePicker,
   typePicker,
@@ -398,12 +399,40 @@ export function createBot(
           ? 'Общие'
           : (collections.find((collection) => collection.id === prefs.filter)?.name ?? 'Все');
 
-    const text =
-      defs.length === 0
-        ? header('Поля') + '\nСправочник пуст. Заведите поле — и его не придётся вводить каждый раз.'
-        : header('Поля') + '\n🌐 общие · 📌 привязанные к разделу';
+    if (defs.length === 0) {
+      const empty = `${header('Поля')}\nСправочник пуст. Заведите поле — и его не придётся вводить каждый раз.`;
+      await screen(ctx, empty, fieldsMenu([], 0, 1, prefs.sort, label), edit);
+      return;
+    }
 
-    await screen(ctx, text, fieldsMenu(defs, page, prefs.sort, label), edit);
+    // Группируем страницу, а не весь справочник: при тридцати разделах
+    // заголовки на всё сообщение не влезли бы в лимит Telegram, а так их
+    // максимум столько же, сколько полей на экране.
+    const pages = Math.max(1, Math.ceil(defs.length / PICKER_PAGE));
+    const safe = Math.min(Math.max(page, 0), pages - 1);
+    const chunk = defs.slice(safe * PICKER_PAGE, (safe + 1) * PICKER_PAGE);
+
+    const lines = [header(`Поля · ${defs.length}`)];
+    let group: string | null = null;
+
+    chunk.forEach((def, position) => {
+      // Раздел — заголовок группы, а не повтор в каждой строке.
+      const scope = def.collectionName ?? 'Везде';
+      if (scope !== group) {
+        lines.push('', `<b>${esc(scope)}</b>`);
+        group = scope;
+      }
+
+      const bits = [
+        def.type ? TYPE_NAMES[def.type] : 'тип определится сам',
+        def.optionCount > 0 ? `${def.optionCount} знач.` : null,
+        def.target === 'attachment' ? 'вложения' : null,
+      ].filter(Boolean);
+
+      lines.push(`<b>[${position + 1}]</b> ${esc(def.key)} · <i>${bits.join(' · ')}</i>`);
+    });
+
+    await screen(ctx, lines.join('\n'), fieldsMenu(chunk, safe, pages, prefs.sort, label), edit);
   }
 
   /** Карточка поля: тип, область и готовые значения. */
@@ -1223,6 +1252,7 @@ export function createBot(
 
       case CB.tagsFilter: {
         const collections = await app.collections.list(userId);
+        await app.state.set(userId, 'idle', { picker: 'tagFilter' });
         await screen(ctx, header('Показывать'), tagsFilterMenu(collections), true);
         return;
       }
@@ -1287,8 +1317,33 @@ export function createBot(
 
       case CB.fieldsFilter: {
         const collections = await app.collections.list(userId);
+        await app.state.set(userId, 'idle', { picker: 'fieldFilter' });
         await screen(ctx, header('Показывать'), fieldFilterMenu(collections), true);
         return;
+      }
+
+      case CB.pickerPage: {
+        const dialog = await app.state.get(userId);
+        const page = Number(arg ?? '0');
+        const collections = await app.collections.list(userId);
+
+        switch (dialog.payload.picker) {
+          case 'fieldFilter':
+            await screen(ctx, header('Показывать'), fieldFilterMenu(collections, page), true);
+            return;
+          case 'tagFilter':
+            await screen(ctx, header('Показывать'), tagsFilterMenu(collections, page), true);
+            return;
+          case 'fieldScope':
+            await screen(ctx, header('Где доступно'), scopePicker(collections, page), true);
+            return;
+          case 'tagScope':
+            await screen(ctx, header('Раздел тега'), tagScopePicker(collections, page), true);
+            return;
+          default:
+            await screen(ctx, 'В какой раздел?', collectionPicker(collections, page));
+            return;
+        }
       }
 
       case CB.fieldsFilterSet: {
@@ -1410,7 +1465,7 @@ export function createBot(
       case CB.fieldRescope: {
         if (!arg) return;
         const collections = await app.collections.list(userId);
-        await app.state.set(userId, 'idle', { defId: arg });
+        await app.state.set(userId, 'idle', { defId: arg, picker: 'fieldScope' });
         await screen(ctx, header('Где доступно'), scopePicker(collections), true);
         return;
       }

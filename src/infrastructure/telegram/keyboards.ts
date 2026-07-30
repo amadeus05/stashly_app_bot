@@ -72,6 +72,7 @@ export const CB = {
   renameAttachment: 'ra',
   entryCollections: 'ec',
   toggleCollection: 'tc',
+  pickerPage: 'pp',
   remind: 'rm',
   remindIn: 'ri',
   remindCustom: 'rc',
@@ -93,42 +94,61 @@ export const CB = {
   deleteNote: 'dn',
 } as const;
 
-/** Экран справочника: сортировка, фильтр, поля, листалка. */
+/** Подпись раздела: значок только свой, подставного не бывает. */
+function label(collection: { name: string; icon: string | null }): string {
+  return `${collection.icon ? `${collection.icon} ` : ''}${collection.name}`;
+}
+
+/**
+ * Справочник полей: номера на кнопках, подробности в тексте.
+ *
+ * Раздел, тип и число значений в кнопку не влезают — она обрезается на
+ * сороковом символе, и имя поля тонет за названием раздела. Поэтому в
+ * кнопках только номера, а разбор — в сообщении.
+ */
 export function fieldsMenu(
-  defs: Array<{ id: string; key: string; collectionName: string | null; optionCount: number; target: string }>,
+  items: Array<{ id: string }>,
   page: number,
+  pages: number,
   sort: 'asc' | 'desc',
   filterLabel: string,
 ): InlineKeyboard {
-  const keyboard = new InlineKeyboard()
+  const keyboard = new InlineKeyboard();
+
+  items.forEach((item, position) => {
+    keyboard.text(String(position + 1), `${CB.field}:${item.id}`);
+    if (position % 4 === 3) keyboard.row();
+  });
+  if (items.length % 4 !== 0) keyboard.row();
+
+  counterPager(keyboard, `${CB.fieldsPage}:`, page, pages);
+
+  return keyboard
     .text(sort === 'asc' ? '🔤 А→Я' : '🔤 Я→А', `${CB.fieldsSort}:${sort === 'asc' ? 'desc' : 'asc'}`)
     .text(`🔎 ${filterLabel}`, CB.fieldsFilter)
-    .row();
-
-  const chunk = slice(defs, page);
-  for (const def of chunk.items) {
-    // Значок сразу говорит про область: общее поле или привязанное.
-    const scope = def.collectionName ? `📌 ${def.collectionName}` : '🌐';
-    const values = def.optionCount > 0 ? ` · ${def.optionCount} знач.` : '';
-    const where = def.target === 'attachment' ? ' · вложения' : '';
-    keyboard.text(`${scope} ${def.key}${values}${where}`.slice(0, 40), `${CB.field}:${def.id}`).row();
-  }
-
-  counterPager(keyboard, `${CB.fieldsPage}:`, chunk.page, chunk.pages);
-  return keyboard.text('➕ Новое поле', CB.fieldNew).row().text('⬅️ Меню', CB.menu);
+    .row()
+    .text('➕ Новое поле', CB.fieldNew)
+    .row()
+    .text('⬅️ Меню', CB.menu);
 }
 
-export function fieldFilterMenu(collections: Array<{ id: string; name: string; icon: string | null }>): InlineKeyboard {
+export function fieldFilterMenu(
+  collections: Array<{ id: string; name: string; icon: string | null }>,
+  page = 0,
+): InlineKeyboard {
   const keyboard = new InlineKeyboard()
     .text('Все поля', `${CB.fieldsFilterSet}:all`)
     .row()
     .text('🌐 Только общие', `${CB.fieldsFilterSet}:global`)
     .row();
 
-  for (const collection of collections) {
-    keyboard.text(`${collection.icon ? `${collection.icon} ` : ''}${collection.name}`, `${CB.fieldsFilterSet}:${collection.id}`).row();
+  // Разделов может быть тридцать — без листалки клавиатура не поместится.
+  const chunk = slice(collections, page);
+  for (const collection of chunk.items) {
+    keyboard.text(label(collection), `${CB.fieldsFilterSet}:${collection.id}`).row();
   }
 
+  counterPager(keyboard, `${CB.pickerPage}:`, chunk.page, chunk.pages);
   return keyboard.text('⬅️ Назад', CB.fields);
 }
 
@@ -213,17 +233,22 @@ export function tagsMenu(
   return keyboard.text('➕ Новый тег', CB.tagNew).row().text('⬅️ Меню', CB.menu);
 }
 
-export function tagsFilterMenu(collections: Array<{ id: string; name: string; icon: string | null }>): InlineKeyboard {
+export function tagsFilterMenu(
+  collections: Array<{ id: string; name: string; icon: string | null }>,
+  page = 0,
+): InlineKeyboard {
   const keyboard = new InlineKeyboard()
     .text('Все теги', `${CB.tagsFilterSet}:all`)
     .row()
     .text('🌐 Только общие', `${CB.tagsFilterSet}:global`)
     .row();
 
-  for (const collection of collections) {
-    keyboard.text(`${collection.icon ? `${collection.icon} ` : ''}${collection.name}`, `${CB.tagsFilterSet}:${collection.id}`).row();
+  const chunk = slice(collections, page);
+  for (const collection of chunk.items) {
+    keyboard.text(label(collection), `${CB.tagsFilterSet}:${collection.id}`).row();
   }
 
+  counterPager(keyboard, `${CB.pickerPage}:`, chunk.page, chunk.pages);
   return keyboard.text('⬅️ Назад', CB.tags);
 }
 
@@ -237,13 +262,18 @@ export function tagCard(tagId: string): InlineKeyboard {
     .text('⬅️ К тегам', CB.tags);
 }
 
-export function tagScopePicker(collections: Array<{ id: string; name: string; icon: string | null }>): InlineKeyboard {
+export function tagScopePicker(
+  collections: Array<{ id: string; name: string; icon: string | null }>,
+  page = 0,
+): InlineKeyboard {
   const keyboard = new InlineKeyboard().text('🌐 Без раздела', `${CB.tagScope}:global`).row();
+  const chunk = slice(collections, page);
 
-  for (const collection of collections) {
-    keyboard.text(`📌 ${collection.icon ? `${collection.icon} ` : ''}${collection.name}`, `${CB.tagScope}:${collection.id}`).row();
+  for (const collection of chunk.items) {
+    keyboard.text(label(collection), `${CB.tagScope}:${collection.id}`).row();
   }
 
+  counterPager(keyboard, `${CB.pickerPage}:`, chunk.page, chunk.pages);
   return keyboard.text('✖️ Отмена', CB.tags);
 }
 
@@ -266,13 +296,16 @@ export function typePicker(): InlineKeyboard {
 
 export function scopePicker(
   collections: Array<{ id: string; name: string; icon: string | null }>,
+  page = 0,
 ): InlineKeyboard {
   const keyboard = new InlineKeyboard().text('🌐 Везде', `${CB.fieldScope}:global`).row();
+  const chunk = slice(collections, page);
 
-  for (const collection of collections) {
-    keyboard.text(`📌 ${collection.icon ? `${collection.icon} ` : ''}${collection.name}`, `${CB.fieldScope}:${collection.id}`).row();
+  for (const collection of chunk.items) {
+    keyboard.text(label(collection), `${CB.fieldScope}:${collection.id}`).row();
   }
 
+  counterPager(keyboard, `${CB.pickerPage}:`, chunk.page, chunk.pages);
   return keyboard.text('✖️ Отмена', CB.fields);
 }
 
@@ -498,11 +531,15 @@ export function collectionsMenu(
   return keyboard.text('➕ Новый раздел', CB.newCollection).row().text('⬅️ Меню', CB.menu);
 }
 
-export function collectionPicker(collections: Collection[]): InlineKeyboard {
+export function collectionPicker(collections: Collection[], page = 0): InlineKeyboard {
   const keyboard = new InlineKeyboard();
-  for (const collection of collections) {
-    keyboard.text(`${collection.icon ? `${collection.icon} ` : ''}${collection.name}`, `${CB.collection}:${collection.id}:pick`).row();
+  const chunk = slice(collections, page);
+
+  for (const collection of chunk.items) {
+    keyboard.text(label(collection), `${CB.collection}:${collection.id}:pick`).row();
   }
+
+  counterPager(keyboard, `${CB.pickerPage}:`, chunk.page, chunk.pages);
   return keyboard.text('➕ Создать раздел', CB.newCollection).row().text('✖️ Отмена', CB.menu);
 }
 
