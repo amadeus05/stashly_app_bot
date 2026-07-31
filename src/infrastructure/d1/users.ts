@@ -34,4 +34,32 @@ export class UserRepository {
       .bind(userId, messageId)
       .run();
   }
+
+  /**
+   * Путь до текущего экрана: последний элемент — то, что человек видит.
+   *
+   * Битый JSON не должен ломать навигацию — считаем, что истории нет.
+   */
+  async nav(userId: number): Promise<string[]> {
+    const row = await this.db
+      .prepare(`SELECT nav FROM users WHERE id = ?1`)
+      .bind(userId)
+      .first<{ nav: string | null }>();
+
+    if (!row?.nav) return [];
+
+    try {
+      const parsed: unknown = JSON.parse(row.nav);
+      return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+
+  async setNav(userId: number, path: string[]): Promise<void> {
+    await this.db
+      .prepare(`UPDATE users SET nav = ?2 WHERE id = ?1`)
+      .bind(userId, JSON.stringify(path))
+      .run();
+  }
 }

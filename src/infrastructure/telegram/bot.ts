@@ -115,6 +115,71 @@ export function createBot(
     await screen(ctx, text, new InlineKeyboard().text('⬅️ Меню', CB.menu));
   }
 
+  /**
+   * Экраны, на которые можно вернуться.
+   *
+   * Только те, что просто рисуют себя: повторный заход должен показать
+   * то же самое. Действия (удалить, переключить тег) в историю не идут —
+   * иначе «назад» повторило бы их.
+   */
+  const NAVIGABLE = new Set<string>([
+    CB.menu,
+    CB.collections,
+    CB.collection,
+    CB.collectionCard,
+    CB.entry,
+    CB.recent,
+    CB.attachments,
+    CB.attachment,
+    CB.manage,
+    CB.fields,
+    CB.field,
+    CB.fieldOptions,
+    CB.tags,
+    CB.tagCard,
+    CB.reminders,
+    CB.reminder,
+    CB.entryCollections,
+  ]);
+
+  /** Глубже человек и не помнит, а callback_data в базе копить незачем. */
+  const NAV_LIMIT = 15;
+
+  /**
+   * Запоминает переход.
+   *
+   * Возврат на экран, который уже есть в пути, обрезает путь до него, а не
+   * удлиняет: круг «запись → вложение → к записи» иначе рос бы бесконечно,
+   * и «назад» водило бы по кольцу вместо выхода.
+   */
+  async function remember(userId: number, data: string): Promise<void> {
+    const action = data.split(':')[0] ?? '';
+    if (!NAVIGABLE.has(action)) return;
+
+    // Меню — корень: попав туда, путь начинают заново.
+    if (action === CB.menu) {
+      await app.users.setNav(userId, [CB.menu]);
+      return;
+    }
+
+    const path = await app.users.nav(userId);
+    if (path[path.length - 1] === data) return;
+
+    const seen = path.indexOf(data);
+    const next = seen >= 0 ? path.slice(0, seen + 1) : [...path, data];
+
+    await app.users.setNav(userId, next.slice(-NAV_LIMIT));
+  }
+
+  /** Снимает текущий экран и отдаёт предыдущий. Пусто — значит меню. */
+  async function stepBack(userId: number): Promise<string> {
+    const path = await app.users.nav(userId);
+    const next = path.slice(0, -1);
+
+    await app.users.setNav(userId, next);
+    return next[next.length - 1] ?? CB.menu;
+  }
+
   /** Приглашение к вводу — в том же экране, а не отдельным сообщением. */
   async function ask(ctx: Context, text: string): Promise<void> {
     await screen(ctx, text, cancelOnly());
@@ -854,9 +919,22 @@ export function createBot(
     const userId = userIdOf(ctx);
     if (!userId) return;
 
-    const [action, arg, extra] = ctx.callbackQuery.data.split(':');
     // Ответить нужно всегда, иначе на кнопке крутятся часики.
     await ctx.answerCallbackQuery();
+
+    const data = ctx.callbackQuery.data;
+
+    if (data === CB.back) {
+      await route(ctx, userId, await stepBack(userId));
+      return;
+    }
+
+    await remember(userId, data);
+    await route(ctx, userId, data);
+  });
+
+  async function route(ctx: Context, userId: number, data: string): Promise<void> {
+    const [action, arg, extra] = data.split(':');
 
     switch (action) {
       case CB.menu:
@@ -1766,7 +1844,7 @@ export function createBot(
         await showMenu(ctx, userId);
         return;
     }
-  });
+  }
 
   // ---------------------------------------------------------------------
   // Медиа

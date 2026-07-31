@@ -74,6 +74,7 @@ export const CB = {
   toggleCollection: 'tc',
   pickerPage: 'pp',
   confirm: 'cf',
+  back: 'b',
   remind: 'rm',
   remindIn: 'ri',
   remindCustom: 'rc',
@@ -130,7 +131,7 @@ export function fieldsMenu(
     .row()
     .text('➕ Новое поле', CB.fieldNew)
     .row()
-    .text('⬅️ Меню', CB.menu);
+    .text('⬅️ Назад', CB.back).text('🏠 Меню', CB.menu);
 }
 
 export function fieldFilterMenu(
@@ -231,7 +232,7 @@ export function tagsMenu(
   }
 
   counterPager(keyboard, `${CB.tagsPage}:`, chunk.page, chunk.pages);
-  return keyboard.text('➕ Новый тег', CB.tagNew).row().text('⬅️ Меню', CB.menu);
+  return keyboard.text('➕ Новый тег', CB.tagNew).row().text('⬅️ Назад', CB.back).text('🏠 Меню', CB.menu);
 }
 
 export function tagsFilterMenu(
@@ -529,7 +530,7 @@ export function collectionsMenu(
   }
 
   counterPager(keyboard, `${CB.collectionsPage}:`, chunk.page, chunk.pages);
-  return keyboard.text('➕ Новый раздел', CB.newCollection).row().text('⬅️ Меню', CB.menu);
+  return keyboard.text('➕ Новый раздел', CB.newCollection).row().text('⬅️ Назад', CB.back).text('🏠 Меню', CB.menu);
 }
 
 export function collectionPicker(collections: Collection[], page = 0): InlineKeyboard {
@@ -566,7 +567,7 @@ export function cardMenu(card: EntryCard): InlineKeyboard {
 
   keyboard.text('📁 Разделы', `${CB.entryCollections}:${id}`).text('⏰ Напомнить', `${CB.remind}:${id}`).row();
 
-  return keyboard.text('🗑 Удалить', `${CB.confirm}:e:${id}`).text('⬅️ Меню', CB.menu);
+  return keyboard.text('🗑 Удалить', `${CB.confirm}:e:${id}`).text('⬅️ Назад', CB.back).text('🏠 Меню', CB.menu);
 }
 
 const MEDIA_ICON: Record<string, string> = {
@@ -631,7 +632,7 @@ export function entryList(
   if (collectionId) {
     keyboard.text('⚙️ Настройки раздела', `${CB.collectionCard}:${collectionId}`).row();
   }
-  return keyboard.text('⬅️ Меню', CB.menu);
+  return keyboard.text('⬅️ Назад', CB.back).text('🏠 Меню', CB.menu);
 }
 
 export function collectionCard(collectionId: string): InlineKeyboard {
@@ -665,12 +666,12 @@ export function hitList(page: Page<SearchHit>): InlineKeyboard {
     pager(keyboard, `${CB.searchPage}:`, page);
   }
 
-  return keyboard.text('⬅️ Меню', CB.menu);
+  return keyboard.text('⬅️ Назад', CB.back).text('🏠 Меню', CB.menu);
 }
 
 /** Ничего не нашлось — предлагаем сохранить сам запрос как новую запись. */
 export function saveOffer(): InlineKeyboard {
-  return new InlineKeyboard().text('➕ Сохранить как запись', CB.savePending).row().text('⬅️ Меню', CB.menu);
+  return new InlineKeyboard().text('➕ Сохранить как запись', CB.savePending).row().text('⬅️ Назад', CB.back).text('🏠 Меню', CB.menu);
 }
 
 /**
@@ -708,7 +709,7 @@ export function remindersMenu(
   }
 
   counterPager(keyboard, `${CB.reminders}:`, chunk.page, chunk.pages);
-  return keyboard.text('⬅️ Меню', CB.menu);
+  return keyboard.text('⬅️ Назад', CB.back).text('🏠 Меню', CB.menu);
 }
 
 export function reminderCard(id: string, active: boolean, objectId: string | null): InlineKeyboard {
