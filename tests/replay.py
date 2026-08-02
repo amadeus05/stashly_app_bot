@@ -5,6 +5,11 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 
+# Консоль Windows по умолчанию cp1252: русский вывод роняет тесты
+# UnicodeEncodeError, и провал печати выглядит как провал проверки.
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
+
 data = json.load(open(HERE / 'captured.json', encoding='utf-8'))
 c = sqlite3.connect(':memory:')
 for migration in sorted((HERE.parent / 'migrations').glob('*.sql')):

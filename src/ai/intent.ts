@@ -34,7 +34,38 @@ const MEDIA = new Set<MediaFilter>(['image', 'video', 'voice', 'audio', 'documen
  * Всё, что не укладывается в схему, молча отбрасывается — лучше искать
  * по части условий, чем упасть.
  */
-export function toParsedQuery(raw: unknown): ParsedIntent {
+const norm = (text: string): string =>
+  text.toLowerCase().replace(/ё/g, 'е').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+
+/**
+ * Основа слова: отбрасываем окончание, чтобы «стихи» нашлись в «стихах».
+ *
+ * Коротким словам резать нечего — они и так почти основа, а обрубок
+ * в три буквы начал бы совпадать со всем подряд.
+ */
+const stem = (word: string): string => {
+  if (word.length >= 7) return word.slice(0, word.length - 2);
+  if (word.length >= 5) return word.slice(0, word.length - 1);
+  return word;
+};
+
+/**
+ * Название должно прозвучать.
+ *
+ * Модель охотно угадывает по смыслу: «За гранью времени» похоже на стихи —
+ * и она дописывает раздел:стихи, которого никто не называл. Проверить это
+ * промптом нельзя, поэтому проверяем ответ: каждое слово названия обязано
+ * найтись в сказанном. Не нашлось — фильтр отбрасываем, слова всё равно
+ * останутся в полнотекстовой части.
+ */
+function spoken(name: string, said: string): boolean {
+  const words = norm(name).split(' ').filter(Boolean);
+  if (words.length === 0) return false;
+
+  return words.every((word) => said.includes(stem(word)));
+}
+
+export function toParsedQuery(raw: unknown, said = ''): ParsedIntent {
   const source = (raw ?? {}) as Record<string, unknown>;
   const query: ParsedQuery = { text: '', tags: [], collections: [], properties: [], has: [] };
 
@@ -45,8 +76,13 @@ export function toParsedQuery(raw: unknown): ParsedIntent {
       ? value.filter((item): item is string => typeof item === 'string').slice(0, 10).map((item) => item.toLowerCase())
       : [];
 
-  query.tags = strings(source.tags);
-  query.collections = strings(source.collections);
+  // Пустое said — вызов без исходной фразы (разбор ответа в тестах):
+  // проверять нечем, оставляем как есть.
+  const heard = norm(said);
+  const grounded = (items: string[]) => (heard ? items.filter((item) => spoken(item, heard)) : items);
+
+  query.tags = grounded(strings(source.tags));
+  query.collections = grounded(strings(source.collections));
   query.has = strings(source.has).filter((item): item is MediaFilter => MEDIA.has(item as MediaFilter));
 
   if (Array.isArray(source.properties)) {
@@ -55,6 +91,7 @@ export function toParsedQuery(raw: unknown): ParsedIntent {
       const key = typeof entry.key === 'string' ? entry.key.trim().toLowerCase() : '';
       const op = (typeof entry.op === 'string' ? entry.op : '=') as Comparison;
       if (!key || !OPS.has(op)) continue;
+      if (heard && !spoken(key, heard)) continue;
 
       if (op === '=') {
         const text = entry.value === undefined || entry.value === null ? '' : String(entry.value);
@@ -95,7 +132,9 @@ function buildPrompt(context: IntentContext): string {
     '',
     'Правила:',
     '- text — только слова для полнотекстового поиска, без служебных «найди», «покажи».',
-    '- Названия разделов, тегов и полей бери из списков ниже, если фраза на них похожа.',
+    '- Раздел, тег или поле указывай ТОЛЬКО если его название прозвучало в фразе.',
+    '- Не угадывай раздел по смыслу. «За гранью времени» — это text, а не раздел «Стихи».',
+    '- Сомневаешься — оставь слова в text. Лишний фильтр хуже, чем его отсутствие.',
     '- «больше равно», «не меньше», «от N и выше» — это op ">=". «выше», «больше» — ">".',
     '- Числительные словами переводи в числа: «девять» -> 9.',
     '- Если фраза не про поиск или непонятна — intent "unknown".',
@@ -150,7 +189,7 @@ export async function parseIntent(
     const content = payload.choices?.[0]?.message?.content;
     if (!content) return null;
 
-    return toParsedQuery(JSON.parse(content));
+    return toParsedQuery(JSON.parse(content), text);
   } catch (error) {
     console.error('intent error', error);
     return null;
